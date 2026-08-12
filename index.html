@@ -35,6 +35,14 @@
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Kéo thả sắp xếp danh mục */
+        .drag-handle { cursor: grab; }
+        .drag-handle:active { cursor: grabbing; }
+        .drag-row { transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s; }
+        .drag-row.dragging { opacity: 0.6; transform: scale(0.98); box-shadow: 0 8px 20px -6px rgba(0,0,0,0.2); }
+        .drag-row.drag-over-top { border-top: 3px solid #6366f1; }
+        .drag-row.drag-over-bottom { border-bottom: 3px solid #6366f1; }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen pb-20">
@@ -50,6 +58,15 @@
                 <h1 class="text-3xl font-extrabold tracking-tight">
                     Quản Lí Tài Chính Cá Nhân
                 </h1>
+                <div class="flex items-center gap-3">
+                    <span id="syncStatus" class="text-xs font-semibold text-white/80 flex items-center gap-1.5" title="Trạng thái đồng bộ đám mây">
+                        <span id="syncDot" class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
+                        <span id="syncStatusText">Chưa kết nối</span>
+                    </span>
+                    <button onclick="cloudSyncNow()" class="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-full text-xs font-semibold transition-all active:scale-95 flex items-center gap-1.5 shadow-sm" title="Đồng bộ dữ liệu lên/ từ đám mây ngay">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Đồng Bộ Ngay
+                    </button>
+                </div>
             </div>
         </div>
     </header>
@@ -132,9 +149,9 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Left: Visual Category Targets (Progress Bars) -->
-            <div class="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80">
+        <div>
+            <!-- Visual Category Targets (Progress Bars) - full width -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80">
                 <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
                     <div>
                         <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -149,22 +166,6 @@
 
                 <div id="targetProgressContainer" class="space-y-5">
                     <!-- Progress items rendered dynamically -->
-                </div>
-            </div>
-
-            <!-- Right: Chart Section -->
-            <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80 flex flex-col justify-between">
-                <div>
-                    <h2 class="text-xl font-bold text-slate-800 mb-1 flex items-center gap-2">
-                        <i class="fa-solid fa-chart-pie text-pink-500"></i> Phân Bổ Chi Tiêu
-                    </h2>
-                    <p class="text-xs text-slate-500 mb-4">Tỷ lệ chi giữa các danh mục</p>
-                    <div class="relative flex items-center justify-center h-64">
-                        <canvas id="expenseChart"></canvas>
-                    </div>
-                </div>
-                <div class="text-center mt-4 pt-3 border-t border-slate-100 text-xs text-slate-400">
-                    <i class="fa-solid fa-info-circle mr-1"></i> Nhập giao dịch để cập nhật biểu đồ trực tiếp
                 </div>
             </div>
         </div>
@@ -233,45 +234,108 @@
                         </div>
                     </div>
 
-                    <div class="px-6 py-3 bg-slate-50/50 border-b border-slate-200/80 flex flex-wrap items-center gap-3">
-                        <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
-                            <i class="fa-solid fa-filter text-indigo-500"></i> Lọc Theo
-                        </label>
-                        <span class="text-xs text-slate-500">Từ</span>
-                        <input type="date" id="filterFrom" onchange="updateApp()" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
-                        <span class="text-xs text-slate-500">Đến</span>
-                        <input type="date" id="filterTo" onchange="updateApp()" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
-                        <button onclick="clearTransactionFilters()" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all">
-                            <i class="fa-solid fa-xmark mr-1"></i> Tất Cả
-                        </button>
-                        <span class="ml-auto text-xs font-semibold text-slate-500" id="filterInfo"></span>
+                    <div class="px-6 py-3 bg-slate-50/50 border-b border-slate-200/80 flex flex-col gap-2.5">
+                        <div class="flex flex-wrap items-center gap-3">
+                            <span class="text-xs text-slate-500">Từ</span>
+                            <input type="date" id="filterFrom" onchange="updateApp()" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                            <span class="text-xs text-slate-500">Đến</span>
+                            <input type="date" id="filterTo" onchange="updateApp()" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                                <i class="fa-solid fa-filter text-indigo-500"></i> Lọc Theo
+                            </label>
+                            <span class="text-xs text-slate-500">Danh mục</span>
+                            <select id="filterCategory" onchange="setCategoryFilter(this.value)" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-white">
+                                <!-- Populated via JS -->
+                            </select>
+                            <span class="ml-auto text-xs font-semibold text-slate-500" id="filterInfo"></span>
+                        </div>
                     </div>
 
                     <table id="transactionTable" class="w-full text-sm">
                         <thead>
                             <tr>
+                                <th class="w-10 text-center"><input type="checkbox" id="selectAllTx" title="Chọn tất cả giao dịch đang hiển thị" onchange="toggleSelectAllTx(this)"></th>
                                 <th>Ngày</th>
                                 <th>Danh Mục</th>
                                 <th>Mô Tả Chi Tiết</th>
                                 <th>Phân Loại</th>
                                 <th>Số Tiền (VNĐ)</th>
-                                <th class="w-12 text-center">Hành Động</th>
+                                <th class="w-16 text-center">Hành Động</th>
                             </tr>
                         </thead>
                         <tbody id="transactionBody">
                             <!-- Dynamic transactions -->
                         </tbody>
                     </table>
+                    <!-- Phân trang: tối đa 10 giao dịch / trang -->
+                    <div id="txPagination" class="px-6 py-3 flex flex-wrap items-center justify-center gap-1.5 border-t border-slate-100"></div>
                 </div>
 
                 <div class="p-4 border-t border-slate-100 bg-slate-50/30 text-xs text-slate-500 flex justify-between items-center">
                     <span><i class="fa-solid fa-database text-indigo-500 mr-1"></i> Dữ liệu tự động lưu vào trình duyệt</span>
-                    <span id="txCountBadge" class="font-semibold text-slate-700">0 giao dịch</span>
+                    <span class="flex items-center gap-3">
+                        <button id="deleteSelectedTxBtn" onclick="deleteSelectedTransactions()" class="hidden text-xs text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg transition-all font-medium">
+                            <i class="fa-solid fa-trash-can mr-1"></i> Xóa Các Giao Dịch Đã Chọn
+                        </button>
+                        <span id="txCountBadge" class="font-semibold text-slate-700">0 giao dịch</span>
+                    </span>
                 </div>
             </div>
         </div>
 
     </main>
+
+    <!-- Edit Transaction Modal -->
+    <div id="editTxModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="closeEditTxModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-pen-to-square text-indigo-600"></i> Chỉnh Sửa Giao Dịch
+                </h3>
+                <button onclick="closeEditTxModal()" class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="px-6 py-4 space-y-4">
+                <input type="hidden" id="editTxId">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Ngày Giao Dịch</label>
+                    <input type="date" id="editTxDate" required class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Danh Mục</label>
+                    <select id="editTxCategory" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-white">
+                        <!-- Populated via JS -->
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Phân Loại</label>
+                    <select id="editTxType" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-white">
+                        <option value="Chi">Chi</option>
+                        <option value="Thu">Thu</option>
+                        <option value="Tiết Kiệm">Tiết Kiệm</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Số Tiền (VNĐ)</label>
+                    <input type="number" id="editTxAmount" min="0" required class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="VD: 150000">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Mô Tả / Ghi Chú</label>
+                    <input type="text" id="editTxDesc" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="VD: Mua đồ ăn, gia vị, xăng xe...">
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+                <button onclick="closeEditTxModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Đóng</button>
+                <button onclick="saveEditTransaction()" class="px-5 py-2 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-floppy-disk"></i> Lưu Thay Đổi
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Target Settings Modal -->
     <div id="targetSettingsModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
@@ -313,9 +377,6 @@
                 <div class="flex items-center gap-2">
                     <button onclick="resetTargets()" class="text-xs text-slate-500 hover:text-rose-600 px-3 py-2 rounded-lg hover:bg-rose-50 transition-colors flex items-center gap-1.5">
                         <i class="fa-solid fa-rotate-left"></i> Mặc Định
-                    </button>
-                    <button onclick="restoreDefaults()" class="text-xs text-indigo-600 hover:text-indigo-800 px-3 py-2 rounded-lg hover:bg-indigo-50 transition-colors flex items-center gap-1.5" title="Đưa lại các danh mục mặc định với target ban đầu">
-                        <i class="fa-solid fa-arrows-rotate"></i> Khôi Phục Mặc Định
                     </button>
                 </div>
                 <div class="flex gap-2">
@@ -375,6 +436,7 @@
         function saveTarget(cat, value) {
             setTarget(cat, value);
             updateApp(); // re-render bảng Tiến Độ Target ngay lập tức
+            scheduleCloudSync(); // đồng bộ target lên cloud
         }
 
         const BASE_CATEGORIES = [
@@ -403,6 +465,7 @@
             const customs = categories.filter(c => c.isCustom);
             const clean = customs.map(c => ({ id: c.id, name: c.name, type: c.type, color: c.color, icon: c.icon }));
             localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(clean));
+            scheduleCloudSync();
         }
 
         const categories = [];
@@ -411,9 +474,15 @@
             removedBaseIds = JSON.parse(localStorage.getItem('user_removed_categories')) || [];
         } catch (e) { removedBaseIds = []; }
 
+        // Tên đã đổi thủ công của danh mục mặc định (lưu qua nút sửa tên)
+        const renBaseNames = {};
+        try { Object.assign(renBaseNames, JSON.parse(localStorage.getItem('user_category_names')) || {}); } catch (e) {}
+        let renamedBaseNames = renBaseNames;
+
         BASE_CATEGORIES.forEach(bc => {
             if (removedBaseIds.includes(bc.id)) return; // danh mục mặc định đã bị xóa
             const cat = { ...bc, get target() { return getTarget(this); } };
+            if (renamedBaseNames[cat.id]) cat.name = renamedBaseNames[cat.id];
             categories.push(cat);
         });
         loadCustomCategories().forEach(cc => {
@@ -435,6 +504,203 @@
         // Load transactions from localStorage or use initial set
         let transactions = JSON.parse(localStorage.getItem('user_transactions')) || initialTransactions;
         let expenseChart = null;
+        // Hàm hỗ trợ (debug/kiểm tra): trả về đối tượng biểu đồ hiện tại
+        window.getExpenseChart = function() { return expenseChart; }; // (biểu đồ đã gỡ khỏi giao diện)
+
+        // ===== Đồng bộ đám mây JSONBin (điện thoại ↔ máy tính) =====
+        // BIN ID và API Key - dán vào đây nếu cần đổi
+        const CLOUD_BIN_ID = '6a7bdde1f5f4af5e290a1546';
+        const CLOUD_API_KEY = '$2a$10$BL8HGiiigm/4kpsJUuv85eaqJRhBYpdPTVdPIjS05uQC.YoVp.PYK';
+        const CLOUD_DATA_KEY = 'user_cloud_last_payload';
+        const CLOUD_VERSION_KEY = 'user_cloud_version';
+        let cloudEnabled = true;      // bật nếu có BIN_ID + API_KEY
+        let cloudSyncing = false;     // chống chồng lệnh đồng bộ
+        let localDirty = false;       // có thay đổi cục bộ chưa đẩy lên cloud
+        let cloudDebounceTimer = null;
+        let cloudLastResult = null;   // {ok, msg, ts}
+
+        function cloudSetStatus(state, text) {
+            const dot = document.getElementById('syncDot');
+            const label = document.getElementById('syncStatusText');
+            if (!dot || !label) return;
+            label.textContent = text;
+            dot.className = 'w-2 h-2 rounded-full inline-block ' + (state === 'ok' ? 'bg-emerald-400' : state === 'err' ? 'bg-rose-400' : state === 'busy' ? 'bg-amber-300' : 'bg-slate-400');
+        }
+
+        // Gói toàn bộ dữ liệu app thành 1 object để lưu cloud
+        function serializeAppData() {
+            const data = {
+                v: 2,
+                ts: Date.now(),
+                transactions: transactions,
+                customCategories: JSON.parse(localStorage.getItem('user_custom_categories') || '[]'),
+                removedCategories: JSON.parse(localStorage.getItem('user_removed_categories') || '[]'),
+                targets: {}
+            };
+            categories.forEach(cat => {
+                const key = TARGET_KEYS[cat.id] || ('user_target_' + cat.id);
+                const val = localStorage.getItem(key);
+                if (val !== null && val !== undefined) data.targets[cat.id] = val;
+            });
+            return data;
+        }
+
+        // Nạp dữ liệu từ cloud vào localStorage (dùng khi vừa lấy từ cloud về)
+        function applyCloudData(data) {
+            if (!data || typeof data !== 'object') return false;
+            if (Array.isArray(data.transactions)) {
+                transactions = data.transactions;
+                localStorage.setItem('user_transactions', JSON.stringify(transactions));
+            }
+            if (Array.isArray(data.customCategories)) {
+                localStorage.setItem('user_custom_categories', JSON.stringify(data.customCategories));
+            }
+            if (Array.isArray(data.removedCategories)) {
+                localStorage.setItem('user_removed_categories', JSON.stringify(data.removedCategories));
+            }
+            if (data.targets && typeof data.targets === 'object') {
+                Object.keys(data.targets).forEach(id => {
+                    const key = TARGET_KEYS[id] || ('user_target_' + id);
+                    localStorage.setItem(key, String(data.targets[id]));
+                });
+            }
+            return true;
+        }
+
+        // Gọi khi có thay đổi cục bộ -> hẹn đẩy lên cloud sau 15 giây
+        function scheduleCloudSync() {
+            if (!cloudEnabled) return;
+            localDirty = true;
+            if (cloudDebounceTimer) clearTimeout(cloudDebounceTimer);
+            cloudDebounceTimer = setTimeout(() => pushToCloud(true), 15000);
+        }
+
+        // Tải dữ liệu từ cloud về (lần mở app, hoặc khi bấm Đồng Bộ)
+        async function pullFromCloud(manual = false) {
+            if (!cloudEnabled || cloudSyncing) return;
+            cloudSyncing = true;
+            cloudSetStatus('busy', 'Đang tải dữ liệu…');
+            try {
+                const resp = await fetch('https://api.jsonbin.io/v3/b/' + CLOUD_BIN_ID + '/latest', {
+                    headers: { 'X-Access-Key': CLOUD_API_KEY }
+                });
+                if (!resp.ok) {
+                    // 404 = cloud chưa có dữ liệu -> không phải lỗi, chỉ báo là chưa có
+                    if (resp.status === 404) {
+                        cloudSetStatus('ok', 'Cloud chưa có dữ liệu');
+                        if (manual) showToast('Cloud chưa có dữ liệu. Sẽ đẩy dữ liệu của bạn lên.', 'info');
+                        cloudLastResult = { ok: false, msg: 'Cloud rỗng', ts: Date.now() };
+                        cloudSyncing = false;
+                        return false;
+                    }
+                    throw new Error('HTTP ' + resp.status);
+                }
+                const j = await resp.json();
+                const data = j && j.record;
+                if (!data || typeof data !== 'object') throw new Error('Dữ liệu cloud rỗng');
+
+                const localHasDirty = false; // pull luôn ưu tiên cloud
+                applyCloudData(data);
+                updateApp();
+                localStorage.setItem(CLOUD_DATA_KEY, JSON.stringify(data));
+                localStorage.setItem(CLOUD_VERSION_KEY, String(data.ts || Date.now()));
+                cloudSetStatus('ok', 'Đã đồng bộ từ cloud');
+                if (manual) showToast('Đã tải dữ liệu mới từ cloud.', 'success');
+                localDirty = false;
+                cloudLastResult = { ok: true, msg: 'Đã đồng bộ từ cloud', ts: data.ts || Date.now() };
+            } catch (e) {
+                cloudSetStatus('err', 'Lỗi tải dữ liệu');
+                if (manual) showToast('Không tải được từ cloud: ' + e.message, 'error');
+                cloudLastResult = { ok: false, msg: 'Lỗi tải', ts: Date.now() };
+            }
+            cloudSyncing = false;
+        }
+
+        // Đẩy dữ liệu cục bộ lên cloud
+        async function pushToCloud(manual = false) {
+            if (!cloudEnabled || cloudSyncing) return;
+            cloudSyncing = true;
+            cloudSetStatus('busy', 'Đang tải lên…');
+            try {
+                const payload = serializeAppData();
+                const resp = await fetch('https://api.jsonbin.io/v3/b/' + CLOUD_BIN_ID, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Access-Key': CLOUD_API_KEY,
+                        'X-Bin-Versioning': 'false'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                cloudSetStatus('ok', 'Đã đồng bộ lên cloud');
+                if (manual) showToast('Đã đẩy dữ liệu lên cloud.', 'success');
+                localDirty = false;
+                localStorage.setItem(CLOUD_VERSION_KEY, String(payload.ts));
+                cloudLastResult = { ok: true, msg: 'Đã đồng bộ lên cloud', ts: payload.ts };
+            } catch (e) {
+                cloudSetStatus('err', 'Lỗi tải lên');
+                if (manual) showToast('Không đẩy được lên cloud: ' + e.message, 'error');
+                cloudLastResult = { ok: false, msg: 'Lỗi đẩy', ts: Date.now() };
+            }
+            cloudSyncing = false;
+        }
+
+        // Nút "Đồng Bộ Ngay": tải từ cloud về trước, nếu chưa có dữ liệu cloud thì tự đẩy lên
+        async function cloudSyncNow() {
+            if (!cloudEnabled) {
+                showToast('Đồng bộ cloud chưa được cấu hình.', 'error');
+                return;
+            }
+            await pullFromCloud(true);
+            // Đẩy ngược lên cloud để 2 máy luôn khớp (dùng cho lần đầu: cloud rỗng)
+            await pushToCloud(true);
+        }
+
+        // Trả về true nếu cloud có dữ liệu (có version đã lưu cục bộ)
+        function cloudHasLocalData() {
+            return !!localStorage.getItem(CLOUD_VERSION_KEY) || !!localStorage.getItem(CLOUD_DATA_KEY);
+        }
+
+        // Khi mở app: đã từng sync thì tải từ cloud về; nếu chưa bao giờ thì đẩy dữ liệu hiện tại lên cloud
+        async function syncOnLoad() {
+            if (!cloudEnabled) return;
+            cloudSetStatus('busy', 'Đang kết nối…');
+            try {
+                const resp = await fetch('https://api.jsonbin.io/v3/b/' + CLOUD_BIN_ID + '/latest', {
+                    headers: { 'X-Access-Key': CLOUD_API_KEY }
+                });
+                if (!resp.ok) {
+                    // 404 = cloud chưa có dữ liệu (lần đầu) -> đẩy lên; các lỗi khác = lỗi kết nối
+                    if (resp.status === 404) {
+                        localDirty = true;
+                        await pushToCloud(true);
+                        cloudSetStatus('ok', 'Đã đồng bộ lên cloud');
+                    } else {
+                        throw new Error('HTTP ' + resp.status);
+                    }
+                    return;
+                }
+                const j = await resp.json();
+                const data = j && j.record;
+                if (data && typeof data === 'object' && Array.isArray(data.transactions)) {
+                    // Cloud có dữ liệu -> nạp về
+                    applyCloudData(data);
+                    updateApp();
+                    localStorage.setItem(CLOUD_VERSION_KEY, String(data.ts || Date.now()));
+                    cloudSetStatus('ok', 'Đã đồng bộ từ cloud');
+                    localDirty = false;
+                } else {
+                    // Cloud rỗng -> đẩy dữ liệu cục bộ lên lần đầu
+                    localDirty = true;
+                    await pushToCloud(true);
+                    cloudSetStatus('ok', 'Đã đồng bộ lên cloud');
+                }
+            } catch (e) {
+                cloudSetStatus('err', 'Không kết nối được cloud');
+            }
+        }
+        // ===== Hết phần Đồng bộ đám mây =====
 
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
@@ -486,6 +752,7 @@
                 select.appendChild(opt);
             });
             updateCategoryIcon();
+            updateCategoryFilterSelect(); // đổ danh mục vào bộ lọc Nhật Ký cho đồng bộ
         }
 
         function updateCategoryIcon() {
@@ -500,13 +767,20 @@
         // Save current transactions to LocalStorage
         function saveData() {
             localStorage.setItem('user_transactions', JSON.stringify(transactions));
+            scheduleCloudSync(); // thay đổi cục bộ -> hẹn đồng bộ lên cloud
         }
 
         function renderProgressBars(categoryTotals) {
             const container = document.getElementById('targetProgressContainer');
             container.innerHTML = '';
 
-            categories.forEach(cat => {
+            // Khi đang lọc danh mục: bảng vẫn giữ nguyên đủ các danh mục,
+            // chỉ làm nổi bật khung danh mục đang lọc + cập nhật đúng tiến trình theo dữ liệu đã lọc
+            const catsToRender = categories;
+
+            catsToRender.forEach(cat => {
+                const isFiltered = categoryFilterName !== null && categoryFilterName === cat.name;
+                const isAnyFilter = categoryFilterName !== null;
                 const actual = categoryTotals[cat.name] || 0;
                 const percent = cat.target > 0 ? Math.min(Math.round((actual / cat.target) * 100), 100) : 0;
                 
@@ -566,14 +840,18 @@
                 }
 
                 const item = document.createElement('div');
-                item.className = 'space-y-1.5';
+                // Khi đang lọc: danh mục được lọc nổi bật khung, danh mục khác mờ đi
+                const highlightCls = isFiltered
+                    ? ' border-2 border-indigo-500 bg-indigo-50/40 rounded-xl px-3 py-2.5 shadow-md'
+                    : (isAnyFilter ? ' opacity-40' : '');
+                item.className = 'space-y-1.5 transition-all duration-300' + highlightCls;
                 item.innerHTML = `
                     <div class="flex justify-between items-center text-xs">
                         <div class="flex items-center gap-2">
                             <span class="w-6 h-6 rounded-lg flex items-center justify-center text-white text-xs shadow-sm" style="background-color: ${cat.color}">
                                 <i class="fa-solid ${cat.icon}"></i>
                             </span>
-                            <span class="font-bold text-slate-700">${cat.name}</span>
+                            <span class="font-bold ${isFiltered ? 'text-indigo-700' : 'text-slate-700'}">${cat.name}</span>
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="text-slate-500">${formatMoney(actual)} / ${formatMoney(cat.target)}</span>
@@ -592,50 +870,10 @@
             });
         }
 
-        function updateExpenseChart(categoryTotals) {
-            const ctx = document.getElementById('expenseChart').getContext('2d');
-            
-            const expenseCategories = categories.filter(c => c.type === 'Chi');
-            const labels = expenseCategories.map(c => c.name);
-            const data = expenseCategories.map(c => categoryTotals[c.name] || 0);
-            const bgColors = expenseCategories.map(c => c.color);
-
-            if (expenseChart) {
-                expenseChart.destroy();
-            }
-
-            expenseChart = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        data: data,
-                        backgroundColor: bgColors,
-                        borderWidth: 2,
-                        borderColor: '#ffffff'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                font: { family: 'Inter', size: 11 },
-                                boxWidth: 12,
-                                padding: 12
-                            }
-                        }
-                    },
-                    cutout: '65%'
-                }
-            });
-        }
-
         function updateApp() {
-            // Lọc dùng chung: mọi khu vực số liệu đều dựa trên cùng mảng đã lọc theo ngày
+            // Lọc dùng chung: mọi khu vực số liệu đều dựa trên cùng mảng đã lọc theo ngày + danh mục
             const visible = getFilteredTransactions();
+            updateCategoryFilterSelect();
 
             const categoryTotals = {};
             categories.forEach(cat => categoryTotals[cat.name] = 0);
@@ -659,22 +897,25 @@
             document.getElementById('dashSavings').textContent = formatMoney(totalSavings);
 
             // (Khoản tiết kiệm hiển thị không kèm số - chỉnh số trong Cài Đặt Target)
-            
+
             const netBalance = totalIncome - totalExpense - totalSavings;
             document.getElementById('dashBalance').textContent = formatMoney(netBalance);
 
-            // Render progress bars & pie chart
+            // Render progress bars (cập nhật đúng tiến trình theo dữ liệu đã lọc)
             renderProgressBars(categoryTotals);
-            updateExpenseChart(categoryTotals);
 
-            // Cập nhật banner thông báo khoảng ngày đang xem phía trên các thẻ KPI
+            // Cập nhật banner thông báo khoảng ngày + danh mục đang xem phía trên các thẻ KPI
             const banner = document.getElementById('filterBanner');
             const bannerText = document.getElementById('filterBannerText');
             const filterFrom = document.getElementById('filterFrom').value;
             const filterTo = document.getElementById('filterTo').value;
-            if (filterFrom || filterTo) {
+            const activeCat = categoryFilterName;
+            if (filterFrom || filterTo || activeCat) {
                 const fmt = (d) => new Date(d + 'T00:00:00').toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                bannerText.innerHTML = `<i class="fa-solid fa-filter-circle-dollar text-amber-500"></i> Đang hiển thị số liệu cho: ${filterFrom ? fmt(filterFrom) : '...'} → ${filterTo ? fmt(filterTo) : '...'}`;
+                const parts = [];
+                if (activeCat) parts.push(`danh mục <b class="underline decoration-dotted underline-offset-2">${activeCat}</b>`);
+                if (filterFrom || filterTo) parts.push(`${filterFrom ? fmt(filterFrom) : '...'} → ${filterTo ? fmt(filterTo) : '...'}`);
+                bannerText.innerHTML = `<i class="fa-solid fa-filter-circle-dollar text-amber-500"></i> Đang hiển thị số liệu cho: ${parts.join(' · ')}`;
                 banner.classList.remove('hidden');
                 banner.classList.add('flex');
             } else {
@@ -682,8 +923,16 @@
                 banner.classList.remove('flex');
             }
 
-            // Render Transaction Log Table (with date/month filters applied)
+            // Render Transaction Log Table (with category + date/month filters applied)
             renderTransactionTable();
+        }
+
+        // Đồng bộ tên đã đổi vào bộ lọc danh mục: nếu đang lọc danh mục cũ thì chuyển sang tên mới
+        function applyRenamedCategoryToFilter(oldName, newName) {
+            if (categoryFilterName === oldName) {
+                categoryFilterName = newName;
+            }
+            return categoryFilterName;
         }
 
         document.getElementById('transactionForm').addEventListener('submit', function(e) {
@@ -727,13 +976,49 @@
             showToast('Đã xoá giao dịch!', 'warning');
         }
 
-        // ===== Transaction Log Filters (by date range) =====
+        // ===== Transaction Log Filters (by category + date range) =====
 
-        // Hàm lọc dùng chung: đọc ô Từ/Đến, trả về giao dịch trong khoảng (hoặc toàn bộ nếu không lọc)
+        // Danh mục đang lọc (null = tất cả) — dùng chung cho Nhật Ký, KPI, Tiến Độ Target, biểu đồ
+        let categoryFilterName = null;
+
+        // Lọc theo danh mục: đồng bộ tức thì toàn bộ số liệu trên trang
+        function setCategoryFilter(catName) {
+            categoryFilterName = catName || null;
+            txPage = 1; // đổi bộ lọc -> về trang đầu
+            document.getElementById('filterCategory').value = categoryFilterName || '';
+            // Khi lọc danh mục, tự chọn luôn danh mục đó trong form Thêm Giao Dịch Mới
+            const txCat = document.getElementById('txCategory');
+            if (categoryFilterName && [...txCat.options].some(o => o.value === categoryFilterName)) {
+                txCat.value = categoryFilterName;
+                updateCategoryIcon();
+            }
+            updateApp();
+        }
+
+        // Đổ danh mục vào dropdown lọc (đồng bộ với danh sách trong Cài Đặt Target / Tiến Độ / Thêm Giao Dịch)
+        function updateCategoryFilterSelect() {
+            const select = document.getElementById('filterCategory');
+            if (!select) return;
+            select.innerHTML = '';
+            const allOpt = document.createElement('option');
+            allOpt.value = '';
+            allOpt.textContent = 'Tất cả';
+            select.appendChild(allOpt);
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat.name;
+                opt.textContent = cat.name;
+                select.appendChild(opt);
+            });
+            select.value = categoryFilterName || '';
+        }
+
+        // Hàm lọc dùng chung: đọc danh mục + ô Từ/Đến, trả về giao dịch khớp (hoặc toàn bộ nếu không lọc)
         function getFilteredTransactions() {
             const filterFrom = document.getElementById('filterFrom').value;
             const filterTo = document.getElementById('filterTo').value;
             let visible = [...transactions];
+            if (categoryFilterName) visible = visible.filter(tx => tx.category === categoryFilterName);
             if (filterFrom) visible = visible.filter(tx => tx.date >= filterFrom);
             if (filterTo) visible = visible.filter(tx => tx.date <= filterTo);
             return visible;
@@ -747,6 +1032,9 @@
         function clearTransactionFilters() {
             document.getElementById('filterFrom').value = '';
             document.getElementById('filterTo').value = '';
+            categoryFilterName = null;
+            txPage = 1; // đổi bộ lọc -> về trang đầu
+            document.getElementById('filterCategory').value = '';
             updateApp(); // cập nhật lại toàn bộ số liệu (KPI, Target, biểu đồ, nhật ký)
         }
 
@@ -775,19 +1063,31 @@
             if (visible.length === 0) {
                 txBody.innerHTML = `
                     <tr>
-                        <td colspan="6" class="text-center py-8 text-slate-400">
+                        <td colspan="7" class="text-center py-8 text-slate-400">
                             <i class="fa-solid fa-folder-open text-3xl mb-2 block"></i>
                             Chưa có giao dịch nào. Hãy thêm ở form bên cạnh!
                         </td>
                     </tr>
                 `;
+                renderTxPagination(1, 0);
+                onTxCheckChange();
+                updateSelectAllTxHeader();
                 return;
             }
 
-            visible.forEach(tx => {
+            const PAGE_SIZE = 10;
+            const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+            if (txPage > totalPages) txPage = totalPages;
+            const pageStart = (txPage - 1) * PAGE_SIZE;
+            const pageItems = visible.slice(pageStart, pageStart + PAGE_SIZE); // tối đa 10 giao dịch / trang
+
+            pageItems.forEach(tx => {
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-slate-50 transition-colors";
                 tr.innerHTML = `
+                    <td class="text-center">
+                        <input type="checkbox" class="tx-check" data-tx-id="${tx.id}" onchange="onTxCheckChange()" title="Chọn để xóa">
+                    </td>
                     <td class="text-slate-500 font-medium text-xs whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-slate-400"></i>Ngày ${new Date(tx.date + 'T00:00:00').toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
                     <td class="font-bold text-slate-800">${tx.category}</td>
                     <td class="text-slate-600">${tx.desc}</td>
@@ -801,18 +1101,133 @@
                         ${tx.type === 'Chi' || tx.type === 'Tiết Kiệm' ? '-' : '+'}${formatMoney(tx.amount)}
                     </td>
                     <td class="text-center">
-                        <button onclick="deleteTransaction('${tx.id}')" class="text-slate-400 hover:text-rose-600 p-1.5 transition-colors rounded-lg hover:bg-rose-50" title="Xoá khoản này">
-                            <i class="fa-solid fa-trash-can"></i>
+                        <button onclick="openEditTxModal('${tx.id}')" class="text-slate-400 hover:text-indigo-600 p-1.5 transition-colors rounded-lg hover:bg-indigo-50" title="Sửa giao dịch này">
+                            <i class="fa-solid fa-pen-to-square"></i>
                         </button>
                     </td>
                 `;
                 txBody.appendChild(tr);
             });
+
+            renderTxPagination(totalPages, visible.length);
+            onTxCheckChange();
+            updateSelectAllTxHeader();
+        }
+
+        // ===== Phân trang Nhật Ký (tối đa 10 giao dịch / trang) =====
+        let txPage = 1;
+        function goTxPage(page) {
+            txPage = page;
+            renderTransactionTable();
+            updateSelectAllTxHeader();
+        }
+        function renderTxPagination(totalPages, totalCount) {
+            const pag = document.getElementById('txPagination');
+            if (!pag) return;
+            pag.innerHTML = '';
+            if (totalPages <= 1 || totalCount === 0) return; // không cần phân trang khi đủ 1 trang
+
+            const mkBtn = (label, page, cls) => {
+                const b = document.createElement('button');
+                b.textContent = label;
+                b.className = cls;
+                b.onclick = () => goTxPage(page);
+                return b;
+            };
+            pag.appendChild(mkBtn('‹', txPage - 1, 'px-2.5 py-1 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors ' + (txPage === 1 ? 'opacity-40 pointer-events-none' : '')));
+            for (let i = 1; i <= totalPages; i++) {
+                pag.appendChild(mkBtn(String(i), i, 'px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ' + (i === txPage ? 'bg-indigo-600 text-white border-indigo-600' : 'border-slate-200 text-slate-600 hover:bg-slate-100')));
+            }
+            pag.appendChild(mkBtn('›', txPage + 1, 'px-2.5 py-1 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors ' + (txPage === totalPages ? 'opacity-40 pointer-events-none' : '')));
+        }
+
+        // ===== Chọn giao dịch để xóa hàng loạt =====
+        function getSelectedTxIds() {
+            return [...document.querySelectorAll('.tx-check:checked')].map(cb => cb.dataset.txId);
+        }
+        function onTxCheckChange() {
+            updateSelectAllTxHeader();
+            const btn = document.getElementById('deleteSelectedTxBtn');
+            if (!btn) return;
+            const count = getSelectedTxIds().length;
+            btn.classList.toggle('hidden', count === 0);
+            if (count > 0) btn.textContent = ` Xóa Các Giao Dịch Đã Chọn (${count})`;
+            else btn.innerHTML = '<i class="fa-solid fa-trash-can mr-1"></i> Xóa Các Giao Dịch Đã Chọn';
+        }
+        function updateSelectAllTxHeader() {
+            const selAll = document.getElementById('selectAllTx');
+            if (!selAll) return;
+            const cbs = [...document.querySelectorAll('.tx-check')];
+            selAll.checked = cbs.length > 0 && cbs.every(cb => cb.checked);
+            selAll.indeterminate = cbs.some(cb => cb.checked) && !selAll.checked;
+        }
+        function toggleSelectAllTx(checkbox) {
+            document.querySelectorAll('.tx-check').forEach(cb => { cb.checked = checkbox.checked; });
+            onTxCheckChange();
+        }
+        function deleteSelectedTransactions() {
+            const ids = getSelectedTxIds();
+            if (ids.length === 0) return;
+            if (!confirm(`Xóa ${ids.length} giao dịch đã chọn?`)) return;
+            transactions = transactions.filter(t => !ids.includes(t.id));
+            saveData();
+            updateApp();
+            onTxCheckChange();
+            showToast(`Đã xóa ${ids.length} giao dịch đã chọn!`, 'warning');
+        }
+
+        // ===== Chỉnh sửa giao dịch (nút bút) =====
+        function openEditTxModal(txId) {
+            const tx = transactions.find(t => t.id === txId);
+            if (!tx) return;
+            document.getElementById('editTxId').value = tx.id;
+            document.getElementById('editTxDate').value = tx.date;
+            const catSelect = document.getElementById('editTxCategory');
+            catSelect.innerHTML = '';
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat.name;
+                opt.textContent = cat.name;
+                catSelect.appendChild(opt);
+            });
+            catSelect.value = tx.category;
+            document.getElementById('editTxType').value = tx.type;
+            document.getElementById('editTxAmount').value = tx.amount;
+            document.getElementById('editTxDesc').value = tx.desc;
+            document.getElementById('editTxModal').classList.remove('hidden');
+            document.getElementById('editTxModal').classList.add('flex');
+        }
+        function saveEditTransaction() {
+            const id = document.getElementById('editTxId').value;
+            const tx = transactions.find(t => t.id === id);
+            if (!tx) return;
+            const date = document.getElementById('editTxDate').value;
+            const category = document.getElementById('editTxCategory').value;
+            const type = document.getElementById('editTxType').value;
+            const amount = parseInt(document.getElementById('editTxAmount').value);
+            const desc = document.getElementById('editTxDesc').value.trim();
+            if (!date) { showToast('Vui lòng chọn ngày giao dịch!', 'error'); return; }
+            if (!category) { showToast('Vui lòng chọn danh mục!', 'error'); return; }
+            if (isNaN(amount) || amount <= 0) { showToast('Vui lòng nhập số tiền hợp lệ!', 'error'); return; }
+            tx.date = date;
+            tx.category = category;
+            tx.type = type;
+            tx.amount = amount;
+            tx.desc = desc || 'Không có ghi chú';
+            saveData();
+            closeEditTxModal();
+            updateApp();
+            showToast('Đã cập nhật giao dịch!', 'success');
+        }
+        function closeEditTxModal() {
+            document.getElementById('editTxModal').classList.add('hidden');
+            document.getElementById('editTxModal').classList.remove('flex');
         }
 
         function clearAllTransactions() {
             if (transactions.length === 0) return;
             transactions = [];
+            txPage = 1;
             saveData();
             updateApp();
             showToast('Đã dọn dẹp sạch toàn bộ nhật ký giao dịch!', 'warning');
@@ -887,6 +1302,11 @@
             const cat = categories.find(c => c.id === catId);
             if (!cat) return;
             if (!confirm(`Xóa danh mục "${cat.name}"?`)) return;
+            // Nếu đang lọc danh mục bị xóa thì tự bỏ lọc để tránh treo bộ lọc
+            if (categoryFilterName === cat.name) {
+                categoryFilterName = null;
+                document.getElementById('filterCategory').value = '';
+            }
             const idx = categories.findIndex(c => c.id === catId);
             if (idx !== -1) categories.splice(idx, 1);
             localStorage.removeItem(TARGET_KEYS[catId] || ('user_target_' + catId));
@@ -898,6 +1318,7 @@
                 try { removed = JSON.parse(localStorage.getItem('user_removed_categories')) || []; } catch (e) {}
                 if (!removed.includes(catId)) removed.push(catId);
                 localStorage.setItem('user_removed_categories', JSON.stringify(removed));
+                scheduleCloudSync();
             }
             renderTargetSettingsList();
             initCategorySelect();
@@ -905,18 +1326,68 @@
             showToast(`Đã xóa danh mục "${cat.name}"`, 'success');
         }
 
+        // Sửa tên danh mục — đồng bộ ngay ra mọi khu vực (Tiến Độ Target, Phân Bổ, Thêm Giao Dịch, Nhật Ký, bộ lọc danh mục)
+        const CATEGORY_NAMES_KEY = 'user_category_names';
+        function renameCategory(catId) {
+            const cat = categories.find(c => c.id === catId);
+            if (!cat) return;
+            const newName = prompt(`Sửa tên danh mục "${cat.name}":`, cat.name);
+            if (newName === null) return; // người dùng bấm Hủy
+            const trimmed = newName.trim();
+            if (!trimmed) {
+                showToast('Tên danh mục không được để trống!', 'error');
+                return;
+            }
+            if (trimmed === cat.name) return; // không đổi gì
+            if (categories.some(c => c.id !== cat.id && c.name.toLowerCase() === trimmed.toLowerCase())) {
+                showToast(`Danh mục "${trimmed}" đã tồn tại!`, 'error');
+                return;
+            }
+            // Cập nhật tên trong mảng danh mục
+            const oldName = cat.name;
+            cat.name = trimmed;
+            // Đồng bộ tên mới cho mọi giao dịch thuộc danh mục này (Nhật Ký Thu Chi)
+            transactions.forEach(tx => {
+                if (tx.category === oldName) tx.category = trimmed;
+            });
+            // Nếu đang lọc danh mục này thì chuyển bộ lọc sang tên mới
+            applyRenamedCategoryToFilter(oldName, trimmed);
+            // Lưu tên đã đổi: danh mục mặc định lưu riêng để áp dụng lại khi tải trang
+            if (cat.isCustom) {
+                saveCustomCategories();
+            } else {
+                renamedBaseNames[cat.id] = cat.name;
+                localStorage.setItem(CATEGORY_NAMES_KEY, JSON.stringify(renamedBaseNames));
+                scheduleCloudSync();
+            }
+            renderTargetSettingsList();
+            initCategorySelect();
+            updateApp();
+            showToast(`Đã đổi tên danh mục thành "${cat.name}"`, 'success');
+        }
+
         function renderTargetSettingsList() {
             targetSettingsList.innerHTML = '';
             categories.forEach(cat => {
                 const row = document.createElement('div');
-                row.className = 'flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3';
+                row.className = 'drag-row flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3';
+                row.draggable = true;
+                row.dataset.catId = cat.id;
                 row.innerHTML = `
                     <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="drag-handle text-slate-400 hover:text-indigo-500 text-sm flex-shrink-0" title="Kéo để sắp xếp">
+                            <i class="fa-solid fa-grip-vertical"></i>
+                        </span>
                         <span class="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm shadow-sm flex-shrink-0" style="background-color: ${cat.color}">
                             <i class="fa-solid ${cat.icon}"></i>
                         </span>
                         <div class="min-w-0">
-                            <p class="font-bold text-slate-700 text-sm leading-tight truncate">${cat.name}</p>
+                            <div class="flex items-center gap-1.5">
+                                <p class="font-bold text-slate-700 text-sm leading-tight truncate">${cat.name}</p>
+                                <button onclick="renameCategory('${cat.id}')" class="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors flex-shrink-0" title="Sửa tên danh mục">
+                                    <i class="fa-solid fa-pen text-[10px]"></i>
+                                </button>
+                            </div>
                             <p class="text-[10px] text-slate-400 uppercase tracking-wide">${cat.type}</p>
                         </div>
                     </div>
@@ -932,6 +1403,100 @@
                 `;
                 targetSettingsList.appendChild(row);
             });
+            attachDragHandlers();
+        }
+
+        // ===== Kéo thả sắp xếp thứ tự danh mục =====
+        const CATEGORY_ORDER_KEY = 'user_category_order';
+        let dragSource = null;
+
+        function attachDragHandlers() {
+            const rows = targetSettingsList.querySelectorAll('.drag-row');
+            rows.forEach(row => {
+                row.addEventListener('dragstart', function(e) {
+                    dragSource = row;
+                    row.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                    try { e.dataTransfer.setData('text/plain', row.dataset.catId); } catch (err) {}
+                });
+                row.addEventListener('dragend', function() {
+                    row.classList.remove('dragging');
+                    rows.forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+                    dragSource = null;
+                });
+                row.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const rect = row.getBoundingClientRect();
+                    const half = rect.height / 2;
+                    const before = (e.clientY - rect.top) < half;
+                    row.classList.remove('drag-over-top', 'drag-over-bottom');
+                    row.classList.add(before ? 'drag-over-top' : 'drag-over-bottom');
+                });
+                row.addEventListener('dragleave', function() {
+                    row.classList.remove('drag-over-top', 'drag-over-bottom');
+                });
+                row.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    row.classList.remove('drag-over-top', 'drag-over-bottom');
+                    if (!dragSource || dragSource === row) return;
+                    const rect = row.getBoundingClientRect();
+                    const half = rect.height / 2;
+                    const before = (e.clientY - rect.top) < half;
+                    const list = targetSettingsList;
+                    if (before) {
+                        list.insertBefore(dragSource, row);
+                    } else {
+                        list.insertBefore(dragSource, row.nextSibling);
+                    }
+                    saveCategoryOrder();
+                    renderTargetSettingsList(); // render lại với thứ tự mới + cập nhật số liệu
+                    updateApp();
+                });
+            });
+        }
+
+        // Lưu thứ tự danh mục hiện tại (theo id) vào localStorage + cloud
+        function saveCategoryOrder() {
+            // Đọc thứ tự từ DOM sau khi kéo thả (đúng thứ tự người dùng sắp xếp)
+            const rows = targetSettingsList.querySelectorAll('.drag-row');
+            const order = [];
+            rows.forEach(r => { if (r.dataset.catId) order.push(r.dataset.catId); });
+            if (order.length === 0) return;
+            localStorage.setItem(CATEGORY_ORDER_KEY, JSON.stringify(order));
+            // Cập nhật lại mảng categories theo thứ tự mới để các khu vực khác dùng chung
+            const byId = {};
+            categories.forEach(c => byId[c.id] = c);
+            const sorted = [];
+            order.forEach(id => { if (byId[id]) { sorted.push(byId[id]); delete byId[id]; } });
+            categories.forEach(c => { if (byId[c.id]) sorted.push(c); });
+            if (sorted.length === categories.length) {
+                categories.length = 0;
+                categories.push(...sorted);
+            }
+            // Đồng bộ thứ tự mới xuống dropdown Thêm Giao Dịch + bộ lọc danh mục
+            initCategorySelect();
+            scheduleCloudSync();
+        }
+
+        // Áp dụng thứ tự đã lưu lên mảng categories (nếu có)
+        function applySavedCategoryOrder() {
+            try {
+                const order = JSON.parse(localStorage.getItem(CATEGORY_ORDER_KEY));
+                if (!Array.isArray(order) || order.length === 0) return;
+                const byId = {};
+                categories.forEach(c => byId[c.id] = c);
+                const sorted = [];
+                order.forEach(id => {
+                    if (byId[id]) { sorted.push(byId[id]); delete byId[id]; }
+                });
+                // Các danh mục chưa có trong thứ tự đã lưu (mới thêm) xếp cuối theo thứ tự hiện tại
+                categories.forEach(c => { if (byId[c.id]) sorted.push(c); });
+                if (sorted.length === categories.length) {
+                    categories.length = 0;
+                    categories.push(...sorted);
+                }
+            } catch (e) {}
         }
 
         function saveTargetSettings() {
@@ -955,50 +1520,31 @@
             targetSettingsModal.classList.remove('flex');
         }
 
+        // Đưa tất cả target về 0 - CHỈ đặt giá trị, KHÔNG xóa/thêm danh mục
         function resetTargets() {
             if (!confirm('Đặt tất cả target về 0?')) return;
             categories.forEach(cat => saveTarget(cat, 0));
-            showToast('Đã đặt tất cả target về 0.', 'success');
-        }
-
-        // Đưa lại đầy đủ 8 danh mục mặc định với target ban đầu (Thu Nhập 20tr, Tiết Kiệm 5,6tr, ...)
-        function restoreDefaults() {
-            if (!confirm('Đưa lại tất cả danh mục mặc định với target ban đầu?')) return;
-
-            // Xóa danh sách đã ẩn danh mục mặc định -> chúng sẽ hiện lại
-            localStorage.removeItem('user_removed_categories');
-            removedBaseIds = [];
-
-            // Gán lại target mặc định cho từng danh mục gốc
-            BASE_CATEGORIES.forEach(bc => {
-                const key = TARGET_KEYS[bc.id] || ('user_target_' + bc.id);
-                localStorage.setItem(key, String(DEFAULT_TARGETS[bc.id] || 0));
-            });
-
-            // Bổ sung các danh mục mặc định còn thiếu vào danh sách hiện tại
-            BASE_CATEGORIES.forEach(bc => {
-                if (!categories.some(c => c.id === bc.id)) {
-                    const cat = { ...bc, get target() { return getTarget(this); } };
-                    categories.push(cat);
-                }
-            });
-
-            renderTargetSettingsList();
-            initCategorySelect();
+            renderTargetSettingsList(); // cập nhật ngay các ô nhập về trống
             updateApp();
-            showToast('Đã khôi phục danh mục mặc định.', 'success');
+            showToast('Đã đặt tất cả target về 0.', 'success');
         }
 
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape' && !targetSettingsModal.classList.contains('hidden')) {
                 closeTargetSettings();
             }
+            if (e.key === 'Escape' && !document.getElementById('editTxModal').classList.contains('hidden')) {
+                closeEditTxModal();
+            }
         });
 
         // Initialize application on page load
         window.onload = function() {
+            applySavedCategoryOrder(); // áp dụng thứ tự danh mục đã lưu (kéo thả)
             initCategorySelect();
             updateApp();
+            // Đồng bộ đám mây: tải dữ liệu mới nhất từ cloud về (nếu có), hoặc đẩy dữ liệu lên lần đầu
+            syncOnLoad();
         };
     </script>
 </body>
