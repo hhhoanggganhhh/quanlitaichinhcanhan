@@ -1,0 +1,2453 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lí Tài Chính Cá Nhân</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Font Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Firebase: đăng nhập Google + Realtime Database -->
+    <script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-database-compat.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Smooth transitions for interactive elements */
+        .card-hover {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card-hover:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Custom Table formatting optimized for Google Sheets clipboard copy */
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; }
+        th { background-color: #f8fafc; color: #334155; font-weight: 700; }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Kéo thả sắp xếp danh mục */
+        .drag-handle { cursor: grab; }
+        .drag-handle:active { cursor: grabbing; }
+        .drag-row { transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s; }
+        .drag-row.dragging { opacity: 0.6; transform: scale(0.98); box-shadow: 0 8px 20px -6px rgba(0,0,0,0.2); }
+        .drag-row.drag-over-top { border-top: 3px solid #6366f1; }
+        .drag-row.drag-over-bottom { border-bottom: 3px solid #6366f1; }
+
+        /* Thông báo luôn nổi rõ trên mọi cửa sổ, không dùng nền trong suốt/làm mờ */
+        .toast-notification {
+            width: min(430px, calc(100vw - 2rem));
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            box-shadow: 0 18px 45px -12px rgba(15, 23, 42, 0.55);
+        }
+        .toast-success { background: #047857; }
+        .toast-error { background: #be123c; }
+        .toast-warning { background: #b45309; }
+        .toast-info { background: #1d4ed8; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen pb-20">
+
+    <div id="toastContainer" class="fixed top-4 right-4 left-4 sm:left-auto z-[200] flex flex-col items-end gap-3 pointer-events-none" aria-live="polite" aria-atomic="false"></div>
+
+    <!-- Khóa giao diện khi chưa đăng nhập để dữ liệu tài chính không lộ trên máy dùng chung -->
+    <div id="authGate" class="fixed inset-0 z-[100] bg-transparent flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-7 text-center">
+            <div class="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 text-white flex items-center justify-center shadow-lg mb-4">
+                <i class="fa-solid fa-wallet text-2xl"></i>
+            </div>
+            <h2 class="text-2xl font-black text-slate-800">Quản Lí Tài Chính Cá Nhân</h2>
+            <p id="authGateText" class="text-sm font-medium text-slate-700 mt-2 mb-5">Đang kiểm tra đăng nhập…</p>
+            <button id="authGateLoginBtn" onclick="signInWithGoogle()" class="hidden w-full items-center justify-center gap-3 border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold rounded-xl px-4 py-3 transition-all active:scale-[0.98]">
+                <i class="fa-brands fa-google text-lg text-blue-600"></i>
+                Đăng nhập bằng Google
+            </button>
+            <p class="text-[11px] font-medium text-slate-500 mt-4">Mỗi tài khoản chỉ truy cập được dữ liệu của chính mình.</p>
+        </div>
+    </div>
+
+    <header class="bg-gradient-to-r from-blue-700 via-indigo-600 to-purple-700 text-white shadow-lg relative overflow-hidden">
+        <div class="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
+        <div class="absolute left-1/3 -bottom-10 w-60 h-60 bg-pink-500/10 rounded-full blur-3xl"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <h1 class="text-3xl font-extrabold tracking-tight">
+                    Quản Lí Tài Chính Cá Nhân
+                </h1>
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <span id="syncStatus" class="text-xs font-semibold text-white/80 flex items-center gap-1.5" title="Trạng thái đồng bộ đám mây">
+                        <span id="syncDot" class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
+                        <span id="syncStatusText">Đang kiểm tra…</span>
+                    </span>
+                    <div id="userChip" class="hidden items-center gap-2 bg-white/15 rounded-full pl-1 pr-3 py-1 max-w-[230px]">
+                        <img id="userAvatar" alt="Ảnh tài khoản" class="w-7 h-7 rounded-full bg-white/30" referrerpolicy="no-referrer">
+                        <span id="userName" class="text-xs font-semibold truncate"></span>
+                    </div>
+                    <button id="headerLoginBtn" onclick="signInWithGoogle()" class="px-3 py-1.5 bg-white text-indigo-700 hover:bg-indigo-50 rounded-full text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5 shadow-sm">
+                        <i class="fa-brands fa-google"></i> Đăng nhập
+                    </button>
+                    <button onclick="cloudSyncNow()" class="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-full text-xs font-semibold transition-all active:scale-95 flex items-center gap-1.5 shadow-sm" title="Đồng bộ dữ liệu lên/ từ đám mây ngay">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Đồng Bộ Ngay
+                    </button>
+                    <button id="signOutBtn" onclick="signOutGoogle()" class="hidden px-3 py-1.5 bg-white/10 hover:bg-rose-500/70 text-white rounded-full text-xs font-semibold transition-all active:scale-95 items-center gap-1.5" title="Đăng xuất tài khoản Google">
+                        <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-6 relative z-20 space-y-8">
+
+        <!-- Banner: thông báo khoảng ngày đang lọc cho toàn bộ số liệu trên trang -->
+        <div id="filterBanner" class="hidden items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2.5 text-sm">
+            <span id="filterBannerText" class="text-amber-800 font-medium flex items-center gap-2">
+                <i class="fa-solid fa-filter-circle-dollar text-amber-500"></i>
+            </span>
+            <button onclick="clearTransactionFilters()" class="text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 flex-shrink-0">
+                <i class="fa-solid fa-xmark"></i> Xoá lọc
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <!-- Income Card -->
+            <div class="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-md card-hover relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-emerald-100 font-medium text-xs uppercase tracking-wider">Tổng Thu Nhập</p>
+                        <h3 class="text-2xl font-black mt-1" id="dashIncome">0 ₫</h3>
+                    </div>
+                    <div class="p-3 bg-white/20 rounded-xl backdrop-blur-md">
+                        <i class="fa-solid fa-wallet text-xl text-white"></i>
+                    </div>
+                </div>
+                <div class="mt-4 flex items-center text-xs text-emerald-100 gap-1">
+                    <i class="fa-solid fa-circle-arrow-up"></i> Nguồn thu trong tháng
+                </div>
+            </div>
+
+            <!-- Expense Card -->
+            <div class="bg-gradient-to-br from-rose-500 to-red-600 rounded-2xl p-5 text-white shadow-md card-hover relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-rose-100 font-medium text-xs uppercase tracking-wider">Tổng Chi Tiêu</p>
+                        <h3 class="text-2xl font-black mt-1" id="dashExpense">0 ₫</h3>
+                    </div>
+                    <div class="p-3 bg-white/20 rounded-xl backdrop-blur-md">
+                        <i class="fa-solid fa-receipt text-xl text-white"></i>
+                    </div>
+                </div>
+                <div class="mt-4 flex items-center text-xs text-rose-100 gap-1">
+                    <i class="fa-solid fa-circle-arrow-down"></i> Các khoản đã chi
+                </div>
+            </div>
+
+            <!-- Savings Card -->
+            <div class="bg-gradient-to-br from-purple-600 to-indigo-700 rounded-2xl p-5 text-white shadow-md card-hover relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-purple-100 font-medium text-xs uppercase tracking-wider">Tiết Kiệm</p>
+                        <h3 class="text-2xl font-black mt-1" id="dashSavings">0 ₫</h3>
+                    </div>
+                    <div class="p-3 bg-white/20 rounded-xl backdrop-blur-md">
+                        <i class="fa-solid fa-piggy-bank text-xl text-white"></i>
+                    </div>
+                </div>
+                <div class="mt-4 flex items-center text-xs text-purple-100 gap-1">
+                    <i class="fa-solid fa-bullseye"></i> Khoản Tiết Kiệm
+                </div>
+            </div>
+
+            <!-- Balance Card -->
+            <div class="bg-gradient-to-br from-blue-600 to-cyan-600 rounded-2xl p-5 text-white shadow-md card-hover relative overflow-hidden">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-blue-100 font-medium text-xs uppercase tracking-wider">Số Dư Khả Dụng</p>
+                        <h3 class="text-2xl font-black mt-1" id="dashBalance">0 ₫</h3>
+                    </div>
+                    <div class="p-3 bg-white/20 rounded-xl backdrop-blur-md">
+                        <i class="fa-solid fa-scale-balanced text-xl text-white"></i>
+                    </div>
+                </div>
+                <div class="mt-4 flex items-center text-xs text-blue-100 gap-1" id="dashBalanceStatus">
+                    <i class="fa-solid fa-shield-halved"></i> Thu nhập trừ Chi & Tiết kiệm
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <!-- Visual Category Targets (Progress Bars) - full width -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80">
+                <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-chart-line text-indigo-600"></i> Tiến Độ Hạn Mức & Mục Tiêu (Target)
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-0.5">Theo dõi chi tiêu thực tế so với định mức đã đề ra</p>
+                    </div>
+                    <button onclick="openTargetSettings()" class="px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white rounded-full text-xs font-semibold transition-all active:scale-95 flex items-center gap-1.5 shadow-sm hover:shadow-md" title="Nhấn để tùy chỉnh con số target">
+                        <i class="fa-solid fa-sliders text-[10px]"></i> Custom
+                    </button>
+                </div>
+
+                <div id="targetProgressContainer" class="space-y-5">
+                    <!-- Progress items rendered dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Transaction Add Form -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80">
+                <div class="border-b border-slate-100 pb-4 mb-4">
+                    <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <i class="fa-solid fa-circle-plus text-indigo-600"></i> Thêm Giao Dịch Mới
+                    </h3>
+                    <p class="text-xs text-slate-500 mt-0.5">Ghi chép các khoản phát sinh hàng ngày</p>
+                </div>
+
+                <form id="transactionForm" class="space-y-4">
+                    <div>
+                        <div class="flex items-center justify-between gap-2 mb-1">
+                            <label class="block text-xs font-semibold text-slate-700">Ngày & Giờ Giao Dịch</label>
+                            <button type="button" onclick="useCurrentTransactionTime()" class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-2 py-1 rounded-lg transition-colors" title="Bật lại chế độ lấy giờ hiện tại">
+                                <i class="fa-solid fa-clock mr-1"></i><span id="txTimeModeText">Tự động</span>
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input type="date" id="txDate" required aria-label="Ngày giao dịch" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                            <input type="time" id="txTime" required step="60" aria-label="Giờ giao dịch" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Danh Mục Khoản Thu/Chi</label>
+                        <div class="relative">
+                            <span id="txCategoryIcon" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs pointer-events-none transition-all duration-300" style="background-color: #10b981">
+                                <i class="fa-solid fa-money-bill-wave"></i>
+                            </span>
+                            <select id="txCategory" onchange="updateCategoryIcon()" required class="w-full border border-slate-300 rounded-xl p-2.5 pl-11 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                                <!-- Populated via JS -->
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Số Tiền</label>
+                        <div class="relative">
+                            <input type="number" id="txAmount" placeholder="VD: 150" min="0" required class="w-full border border-slate-300 rounded-xl p-2.5 pr-12 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                            <span class="absolute right-3 top-2.5 text-xs font-bold text-slate-400">k</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Mô Tả / Ghi Chú Chi Tiết</label>
+                        <input type="text" id="txDesc" placeholder="VD: Mua đồ ăn, gia vị, xăng xe..." class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                    </div>
+
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white font-bold py-3 rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i> Lưu Giao Dịch
+                    </button>
+                </form>
+            </div>
+
+            <!-- Transaction History Log -->
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden flex flex-col justify-between">
+                <div>
+                    <div class="p-6 bg-slate-50/50 border-b border-slate-200/80 flex justify-between items-center flex-wrap gap-4">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                <i class="fa-solid fa-clock-rotate-left text-slate-600"></i> Nhật Ký Thu Chi Gần Đây
+                            </h3>
+                            <p class="text-xs text-slate-500 mt-0.5">Danh sách toàn bộ các khoản đã nhập</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="clearAllTransactions()" class="text-xs text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg transition-all font-medium">
+                                <i class="fa-solid fa-trash-can mr-1"></i> Xoá Tất Cả
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="px-6 py-3 bg-slate-50/50 border-b border-slate-200/80 flex flex-col gap-2.5">
+                        <div class="flex flex-wrap items-center gap-3">
+                            <span class="text-xs text-slate-500">Từ</span>
+                            <input type="date" id="filterFrom" onchange="updateApp()" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                            <span class="text-xs text-slate-500">Đến</span>
+                            <input type="date" id="filterTo" onchange="updateApp()" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <label class="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                                <i class="fa-solid fa-filter text-indigo-500"></i> Lọc Theo
+                            </label>
+                            <span class="text-xs text-slate-500">Danh mục</span>
+                            <select id="filterCategory" onchange="setCategoryFilter(this.value)" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-white">
+                                <!-- Populated via JS -->
+                            </select>
+                            <span class="ml-auto text-xs font-semibold text-slate-500" id="filterInfo"></span>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                    <table id="transactionTable" class="w-full min-w-[900px] text-sm">
+                        <thead>
+                            <tr>
+                                <th class="w-10 text-center"><input type="checkbox" id="selectAllTx" title="Chọn tất cả giao dịch đang hiển thị" onchange="toggleSelectAllTx(this)"></th>
+                                <th>Ngày & Giờ</th>
+                                <th>Danh Mục</th>
+                                <th>Mô Tả Chi Tiết</th>
+                                <th>Phân Loại</th>
+                                <th>Số Tiền (VNĐ)</th>
+                                <th class="w-16 text-center">Hành Động</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactionBody">
+                            <!-- Dynamic transactions -->
+                        </tbody>
+                    </table>
+                    </div>
+                    <!-- Phân trang: tối đa 10 giao dịch / trang -->
+                    <div id="txPagination" class="px-6 py-3 flex flex-wrap items-center justify-center gap-1.5 border-t border-slate-100"></div>
+                </div>
+
+                <div class="p-4 border-t border-slate-100 bg-slate-50/30 text-xs text-slate-500 flex justify-between items-center">
+                    <span><i class="fa-solid fa-database text-indigo-500 mr-1"></i> Tự động lưu trên thiết bị và Firebase</span>
+                    <span class="flex items-center gap-3">
+                        <button id="deleteSelectedTxBtn" onclick="deleteSelectedTransactions()" class="hidden text-xs text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg transition-all font-medium">
+                            <i class="fa-solid fa-trash-can mr-1"></i> Xóa Các Giao Dịch Đã Chọn
+                        </button>
+                        <span id="txCountBadge" class="font-semibold text-slate-700">0 giao dịch</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Edit Transaction Modal -->
+    <div id="editTxModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+        <div class="absolute inset-0 bg-slate-900/30" onclick="closeEditTxModal()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-pen-to-square text-indigo-600"></i> Chỉnh Sửa Giao Dịch
+                </h3>
+                <button onclick="closeEditTxModal()" class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="px-6 py-4 space-y-4">
+                <input type="hidden" id="editTxId">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Ngày & Giờ Giao Dịch</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="date" id="editTxDate" required aria-label="Ngày giao dịch" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                        <input type="time" id="editTxTime" required step="60" aria-label="Giờ giao dịch" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Danh Mục</label>
+                    <select id="editTxCategory" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-white">
+                        <!-- Populated via JS -->
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Phân Loại</label>
+                    <select id="editTxType" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-white">
+                        <option value="Chi">Chi</option>
+                        <option value="Thu">Thu</option>
+                        <option value="Tiết Kiệm">Tiết Kiệm</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Số Tiền (VNĐ)</label>
+                    <input type="number" id="editTxAmount" min="0" required class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="VD: 150000">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Mô Tả / Ghi Chú</label>
+                    <input type="text" id="editTxDesc" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" placeholder="VD: Mua đồ ăn, gia vị, xăng xe...">
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+                <button onclick="closeEditTxModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Đóng</button>
+                <button onclick="saveEditTransaction()" class="px-5 py-2 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-floppy-disk"></i> Lưu Thay Đổi
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Target Settings Modal -->
+    <div id="targetSettingsModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+        <div class="absolute inset-0 bg-slate-900/30" onclick="closeTargetSettings()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-bullseye text-indigo-600"></i> Cài Đặt Target
+                </h3>
+                <button onclick="closeTargetSettings()" class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="px-6 py-4 overflow-y-auto space-y-3 flex-1">
+                <p class="text-xs text-slate-500">Điều chỉnh hạn mức rồi nhấn Lưu để đồng bộ. Với danh mục Custom, nhấn trực tiếp vào icon để thay đổi.</p>
+                <div id="targetSettingsList" class="space-y-3">
+                    <!-- Target inputs rendered dynamically -->
+                </div>
+
+                <!-- Add / Remove category -->
+                <div class="border-t border-slate-200 pt-4 space-y-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1.5">Thêm Danh Mục</label>
+                        <div class="flex items-center gap-2">
+                            <div class="relative flex-1 min-w-0">
+                                <button type="button" onclick="openIconPicker('new')" class="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-md text-indigo-500 hover:bg-indigo-50 hover:text-indigo-700 flex items-center justify-center" title="Chọn icon">
+                                    <i id="newCatIconPreview" class="fa-solid fa-receipt text-xs"></i>
+                                </button>
+                                <input type="text" id="newCatName" oninput="updateNewCategoryIconPreview()" placeholder="Tên danh mục mới" class="w-full border border-slate-300 rounded-lg pl-8 pr-2.5 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                            </div>
+                            <select id="newCatType" onchange="updateNewCategoryIconPreview()" class="border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all">
+                                <option value="Chi">Chi</option>
+                                <option value="Thu">Thu</option>
+                                <option value="Tiết Kiệm">Tiết Kiệm</option>
+                            </select>
+                            <button onclick="addCustomCategory()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition-all flex items-center gap-1.5">
+                                <i class="fa-solid fa-plus"></i> Thêm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-200 flex items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                    <button onclick="resetTargets()" class="text-xs text-slate-500 hover:text-rose-600 px-3 py-2 rounded-lg hover:bg-rose-50 transition-colors flex items-center gap-1.5">
+                        <i class="fa-solid fa-rotate-left"></i> Mặc Định
+                    </button>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="saveTargetSettings()" class="px-5 py-2 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i> Lưu
+                    </button>
+                    <button onclick="closeTargetSettings()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Đóng</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Icon Picker Modal -->
+    <div id="iconPickerModal" class="fixed inset-0 z-[80] hidden items-center justify-center p-4">
+        <div class="absolute inset-0 bg-slate-900/35" onclick="closeIconPicker()"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md max-h-[80vh] flex flex-col">
+            <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
+                <div>
+                    <h3 class="font-extrabold text-slate-800">Chọn Icon Danh Mục</h3>
+                    <p class="text-xs text-slate-500 mt-0.5">Nhấn vào icon bạn muốn sử dụng</p>
+                </div>
+                <button type="button" onclick="closeIconPicker()" class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 flex items-center justify-center" aria-label="Đóng bảng chọn icon">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div id="iconPickerGrid" class="p-5 grid grid-cols-6 sm:grid-cols-8 gap-2 overflow-y-auto"></div>
+            <div class="px-5 py-4 border-t border-slate-200 flex items-center justify-between gap-3">
+                <button type="button" onclick="useAutomaticCategoryIcon()" class="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-2 rounded-lg transition-colors">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Tự động theo tên
+                </button>
+                <button type="button" onclick="closeIconPicker()" class="text-xs font-bold text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-lg transition-colors">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Default categories - target values are stored in localStorage and can be edited in "Cài Đặt Target"
+        const DEFAULT_TARGETS = {
+            thu_nhap: 20000000,
+            tiet_kiem: 5600000,
+            an_uong: 3500000,
+            hoa_don: 1200000,
+            cong_viec: 1000000,
+            ca_nhan: 1800000,
+            di_choi: 1000000,
+            phat_sinh: 500000
+        };
+
+        // Colors & icons cho danh mục tự thêm
+        const CUSTOM_COLORS = ['#0ea5e9', '#f97316', '#14b8a6', '#a855f7', '#84cc16', '#f43f5e', '#6366f1', '#eab308', '#22c55e', '#d946ef'];
+        const CUSTOM_ICONS = [
+            'fa-star', 'fa-heart', 'fa-gift', 'fa-gamepad', 'fa-book', 'fa-plane', 'fa-dumbbell', 'fa-music', 'fa-car', 'fa-shield-halved',
+            'fa-utensils', 'fa-mug-hot', 'fa-basket-shopping', 'fa-cart-shopping', 'fa-shirt', 'fa-house', 'fa-gas-pump', 'fa-motorcycle', 'fa-bus',
+            'fa-heart-pulse', 'fa-prescription-bottle-medical', 'fa-graduation-cap', 'fa-book-open', 'fa-baby', 'fa-paw', 'fa-spa', 'fa-scissors',
+            'fa-mobile-screen-button', 'fa-wifi', 'fa-bolt', 'fa-droplet', 'fa-file-invoice-dollar', 'fa-sack-dollar', 'fa-chart-line', 'fa-building-columns',
+            'fa-hand-holding-dollar', 'fa-hand-holding-heart', 'fa-briefcase', 'fa-laptop-code', 'fa-screwdriver-wrench', 'fa-hotel', 'fa-film', 'fa-headphones',
+            'fa-futbol', 'fa-cake-candles', 'fa-piggy-bank', 'fa-money-bill-wave', 'fa-receipt', 'fa-wallet', 'fa-champagne-glasses',
+            'fa-arrow-right-arrow-left', 'fa-user', 'fa-face-laugh-beam', 'fa-ring'
+        ];
+
+        function normalizeCategoryKeywords(value) {
+            return String(value || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/đ/g, 'd')
+                .replace(/Đ/g, 'd')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, ' ')
+                .trim();
+        }
+
+        function chooseCustomCategoryIcon(name, type = 'Chi') {
+            const text = ' ' + normalizeCategoryKeywords(name) + ' ';
+            const matches = keywords => keywords.some(keyword => text.includes(' ' + keyword + ' '));
+            const iconRules = [
+                { keywords: ['an uong', 'do an', 'com', 'pho', 'bun', 'nha hang'], icon: 'fa-utensils' },
+                { keywords: ['ca phe', 'cafe', 'tra sua', 'nuoc uong'], icon: 'fa-mug-hot' },
+                { keywords: ['sieu thi', 'cho', 'thuc pham'], icon: 'fa-basket-shopping' },
+                { keywords: ['mua sam', 'mua do', 'shopping'], icon: 'fa-cart-shopping' },
+                { keywords: ['quan ao', 'thoi trang', 'giay dep'], icon: 'fa-shirt' },
+                { keywords: ['tien nha', 'nha o', 'thue nha', 'chung cu'], icon: 'fa-house' },
+                { keywords: ['xang', 'nhien lieu'], icon: 'fa-gas-pump' },
+                { keywords: ['xe may', 'motor'], icon: 'fa-motorcycle' },
+                { keywords: ['xe buyt', 'bus', 'giao thong cong cong'], icon: 'fa-bus' },
+                { keywords: ['o to', 'oto', 'taxi', 'grab', 'di lai', 'giao thong', 'xe'], icon: 'fa-car' },
+                { keywords: ['suc khoe', 'y te', 'kham benh', 'benh vien', 'bac si'], icon: 'fa-heart-pulse' },
+                { keywords: ['thuoc', 'duoc pham'], icon: 'fa-prescription-bottle-medical' },
+                { keywords: ['hoc phi', 'hoc tap', 'truong hoc', 'giao duc'], icon: 'fa-graduation-cap' },
+                { keywords: ['sach', 'tai lieu', 'khoa hoc'], icon: 'fa-book-open' },
+                { keywords: ['con cai', 'em be', 'tre em', 'bim sua'], icon: 'fa-baby' },
+                { keywords: ['thu cung', 'cho meo', 'pet'], icon: 'fa-paw' },
+                { keywords: ['lam dep', 'spa', 'my pham'], icon: 'fa-spa' },
+                { keywords: ['cat toc', 'lam toc', 'salon'], icon: 'fa-scissors' },
+                { keywords: ['dien thoai', 'nap the', 'sim'], icon: 'fa-mobile-screen-button' },
+                { keywords: ['internet', 'wifi', 'mang'], icon: 'fa-wifi' },
+                { keywords: ['tien dien', 'dien'], icon: 'fa-bolt' },
+                { keywords: ['tien nuoc', 'nuoc'], icon: 'fa-droplet' },
+                { keywords: ['hoa don', 'phi dich vu'], icon: 'fa-file-invoice-dollar' },
+                { keywords: ['luong', 'thu nhap', 'tien thuong', 'thuong'], icon: 'fa-money-bill-wave' },
+                { keywords: ['dau tu', 'chung khoan', 'co phieu', 'tien lai', 'lai suat'], icon: 'fa-chart-line' },
+                { keywords: ['ngan hang'], icon: 'fa-building-columns' },
+                { keywords: ['chuyen khoan', 'chuyen tien'], icon: 'fa-arrow-right-arrow-left' },
+                { keywords: ['vay', 'tra no', 'no'], icon: 'fa-hand-holding-dollar' },
+                { keywords: ['tu thien', 'quyen gop', 'ung ho'], icon: 'fa-hand-holding-heart' },
+                { keywords: ['cong viec', 'van phong'], icon: 'fa-briefcase' },
+                { keywords: ['may tinh', 'laptop', 'phan mem', 'cong nghe'], icon: 'fa-laptop-code' },
+                { keywords: ['sua chua', 'bao tri', 'phat sinh'], icon: 'fa-screwdriver-wrench' },
+                { keywords: ['du lich', 've may bay'], icon: 'fa-plane' },
+                { keywords: ['khach san', 'nha nghi'], icon: 'fa-hotel' },
+                { keywords: ['xem phim', 'rap phim', 'phim'], icon: 'fa-film' },
+                { keywords: ['am nhac', 'nghe nhac'], icon: 'fa-headphones' },
+                { keywords: ['game', 'tro choi'], icon: 'fa-gamepad' },
+                { keywords: ['the thao', 'gym', 'tap luyen'], icon: 'fa-dumbbell' },
+                { keywords: ['bong da'], icon: 'fa-futbol' },
+                { keywords: ['qua tang', 'qua'], icon: 'fa-gift' },
+                { keywords: ['sinh nhat', 'banh kem'], icon: 'fa-cake-candles' },
+                { keywords: ['dam cuoi', 'cuoi hoi'], icon: 'fa-ring' },
+                { keywords: ['giai tri'], icon: 'fa-face-laugh-beam' },
+                { keywords: ['ca nhan', 'chi tieu ca nhan'], icon: 'fa-user' },
+                { keywords: ['thue'], icon: 'fa-receipt' },
+                { keywords: ['di choi', 'tiec', 'lien hoan'], icon: 'fa-champagne-glasses' },
+                { keywords: ['bao hiem', 'bao mat'], icon: 'fa-shield-halved' },
+                { keywords: ['tiet kiem'], icon: 'fa-piggy-bank' }
+            ];
+            const matched = iconRules.find(rule => matches(rule.keywords));
+            if (matched) return matched.icon;
+            if (type === 'Thu') return 'fa-sack-dollar';
+            if (type === 'Tiết Kiệm') return 'fa-piggy-bank';
+            return 'fa-receipt';
+        }
+
+        function updateNewCategoryIconPreview() {
+            const nameInput = document.getElementById('newCatName');
+            const typeInput = document.getElementById('newCatType');
+            const preview = document.getElementById('newCatIconPreview');
+            if (!nameInput || !typeInput || !preview) return;
+            const icon = selectedNewCategoryIcon || chooseCustomCategoryIcon(nameInput.value, typeInput.value);
+            preview.className = 'fa-solid ' + icon + ' text-xs';
+        }
+
+        let selectedNewCategoryIcon = null;
+        let iconPickerTarget = null;
+
+        function getCurrentPickerIcon() {
+            if (iconPickerTarget === 'new') {
+                const nameInput = document.getElementById('newCatName');
+                const typeInput = document.getElementById('newCatType');
+                return selectedNewCategoryIcon || chooseCustomCategoryIcon(nameInput ? nameInput.value : '', typeInput ? typeInput.value : 'Chi');
+            }
+            const cat = categories.find(item => item.id === iconPickerTarget && item.isCustom);
+            return cat ? cat.icon : '';
+        }
+
+        function renderIconPicker() {
+            const grid = document.getElementById('iconPickerGrid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            const currentIcon = getCurrentPickerIcon();
+            [...new Set(CUSTOM_ICONS)].forEach(icon => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'aspect-square rounded-xl border flex items-center justify-center text-lg transition-all ' + (
+                    icon === currentIcon
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-md ring-2 ring-indigo-200'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-700'
+                );
+                button.title = 'Chọn icon';
+                const iconElement = document.createElement('i');
+                iconElement.className = 'fa-solid ' + icon;
+                button.appendChild(iconElement);
+                button.addEventListener('click', () => selectCategoryIcon(icon));
+                grid.appendChild(button);
+            });
+        }
+
+        function openIconPicker(target) {
+            if (target !== 'new' && !categories.some(cat => cat.id === target && cat.isCustom)) return;
+            iconPickerTarget = target;
+            renderIconPicker();
+            const modal = document.getElementById('iconPickerModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeIconPicker() {
+            const modal = document.getElementById('iconPickerModal');
+            if (!modal) return;
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            iconPickerTarget = null;
+        }
+
+        function selectCategoryIcon(icon) {
+            if (!CUSTOM_ICONS.includes(icon)) return;
+            if (iconPickerTarget === 'new') {
+                selectedNewCategoryIcon = icon;
+                updateNewCategoryIconPreview();
+                closeIconPicker();
+                return;
+            }
+            const cat = categories.find(item => item.id === iconPickerTarget && item.isCustom);
+            if (!cat) return;
+            cat.icon = icon;
+            cat.iconManual = true;
+            saveCustomCategories();
+            renderTargetSettingsList();
+            initCategorySelect();
+            updateApp();
+            closeIconPicker();
+            showToast(`Đã đổi icon cho danh mục "${cat.name}".`, 'success');
+        }
+
+        function useAutomaticCategoryIcon() {
+            if (iconPickerTarget === 'new') {
+                selectedNewCategoryIcon = null;
+                updateNewCategoryIconPreview();
+                closeIconPicker();
+                return;
+            }
+            const cat = categories.find(item => item.id === iconPickerTarget && item.isCustom);
+            if (!cat) return;
+            cat.iconManual = false;
+            cat.icon = chooseCustomCategoryIcon(cat.name, cat.type);
+            saveCustomCategories();
+            renderTargetSettingsList();
+            initCategorySelect();
+            updateApp();
+            closeIconPicker();
+            showToast(`Đã chuyển icon "${cat.name}" về chế độ tự động.`, 'success');
+        }
+
+        const TARGET_KEYS = {
+            thu_nhap: 'user_target_thu_nhap',
+            tiet_kiem: 'user_target_tiet_kiem',
+            an_uong: 'user_target_an_uong',
+            hoa_don: 'user_target_hoa_don',
+            cong_viec: 'user_target_cong_viec',
+            ca_nhan: 'user_target_ca_nhan',
+            di_choi: 'user_target_di_choi',
+            phat_sinh: 'user_target_phat_sinh'
+        };
+
+        // Đọc hạn mức target đã lưu cho 1 danh mục (dùng cat.id trực tiếp)
+        function getTarget(cat) {
+            const key = TARGET_KEYS[cat.id] || ('user_target_' + cat.id);
+            const stored = localStorage.getItem(key);
+            const value = Number(stored);
+            if (stored !== null && Number.isSafeInteger(value) && value >= 0) {
+                return value;
+            }
+            return DEFAULT_TARGETS[cat.id] || 0;
+        }
+
+        function setTarget(cat, value) {
+            const key = TARGET_KEYS[cat.id] || ('user_target_' + cat.id);
+            localStorage.setItem(key, String(value));
+        }
+
+        // Lưu hạn mức target của một danh mục vào localStorage
+        function saveTarget(cat, value) {
+            setTarget(cat, value);
+            updateApp(); // re-render bảng Tiến Độ Target ngay lập tức
+            scheduleCloudSync(); // đồng bộ target lên cloud
+        }
+
+        const BASE_CATEGORIES = [
+            { id: 'thu_nhap', name: 'Thu Nhập', type: 'Thu', color: '#10b981', icon: 'fa-money-bill-wave' },
+            { id: 'tiet_kiem', name: 'Tiết Kiệm', type: 'Tiết Kiệm', color: '#8b5cf6', icon: 'fa-piggy-bank' },
+            { id: 'an_uong', name: 'Ăn Uống', type: 'Chi', color: '#3b82f6', icon: 'fa-utensils' },
+            { id: 'hoa_don', name: 'Hoá Đơn', type: 'Chi', color: '#ef4444', icon: 'fa-bolt' },
+            { id: 'cong_viec', name: 'Công Việc', type: 'Chi', color: '#10b981', icon: 'fa-laptop-code' },
+            { id: 'ca_nhan', name: 'Chi Tiêu Cá Nhân', type: 'Chi', color: '#ec4899', icon: 'fa-user' },
+            { id: 'di_choi', name: 'Đi Chơi', type: 'Chi', color: '#f59e0b', icon: 'fa-champagne-glasses' },
+            { id: 'phat_sinh', name: 'Phát Sinh', type: 'Chi', color: '#64748b', icon: 'fa-wrench' }
+        ];
+
+        const CUSTOM_CATS_KEY = 'user_custom_categories';
+        const REMOVED_CATS_KEY = 'user_removed_categories';
+        const CATEGORY_NAMES_KEY = 'user_category_names';
+        const CATEGORY_ORDER_KEY = 'user_category_order';
+        const TRANSACTIONS_KEY = 'user_transactions';
+
+        function loadCustomCategories() {
+            try {
+                const stored = JSON.parse(localStorage.getItem(CUSTOM_CATS_KEY));
+                return Array.isArray(stored) ? stored : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveCustomCategories() {
+            const customs = categories.filter(c => c.isCustom);
+            const clean = customs.map(c => ({
+                id: c.id,
+                name: c.name,
+                type: c.type,
+                color: c.color,
+                icon: CUSTOM_ICONS.includes(c.icon) ? c.icon : chooseCustomCategoryIcon(c.name, c.type),
+                iconManual: c.iconManual === true
+            }));
+            localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(clean));
+            scheduleCloudSync();
+        }
+
+        const categories = [];
+        let removedBaseIds = [];
+        let renamedBaseNames = {};
+
+        function readStoredJSON(key, fallback) {
+            try {
+                const value = JSON.parse(localStorage.getItem(key));
+                return value === null ? fallback : value;
+            } catch (e) {
+                return fallback;
+            }
+        }
+
+        function cleanText(value, maxLength = 200) {
+            return String(value == null ? '' : value).replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, maxLength);
+        }
+
+        function escapeHTML(value) {
+            return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+            })[char]);
+        }
+
+        function createStableId(prefix) {
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                return prefix + '-' + window.crypto.randomUUID();
+            }
+            return prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+        }
+
+        function isSafeRecordId(value, prefix) {
+            return new RegExp('^' + prefix + '[-_][A-Za-z0-9_-]{1,100}$').test(String(value || ''));
+        }
+
+        // Dựng lại toàn bộ danh mục sau mỗi lần nhận dữ liệu từ thiết bị khác.
+        function rebuildCategoriesFromStorage() {
+            removedBaseIds = readStoredJSON(REMOVED_CATS_KEY, []);
+            if (!Array.isArray(removedBaseIds)) removedBaseIds = [];
+            removedBaseIds = removedBaseIds.filter(id => BASE_CATEGORIES.some(base => base.id === id));
+            const storedNames = readStoredJSON(CATEGORY_NAMES_KEY, {});
+            renamedBaseNames = {};
+            if (storedNames && typeof storedNames === 'object' && !Array.isArray(storedNames)) {
+                BASE_CATEGORIES.forEach(base => {
+                    const name = cleanText(storedNames[base.id], 60);
+                    if (name) renamedBaseNames[base.id] = name;
+                });
+            }
+
+            categories.length = 0;
+            BASE_CATEGORIES.forEach(base => {
+                if (removedBaseIds.includes(base.id)) return;
+                const cat = { ...base, get target() { return getTarget(this); } };
+                if (renamedBaseNames[cat.id]) cat.name = renamedBaseNames[cat.id];
+                categories.push(cat);
+            });
+            loadCustomCategories().forEach(item => {
+                if (!item || !isSafeRecordId(item.id, 'custom')) return;
+                const name = cleanText(item.name, 60);
+                if (!name || categories.some(cat => cat.name.toLowerCase() === name.toLowerCase())) return;
+                const type = ['Chi', 'Thu', 'Tiết Kiệm'].includes(item.type) ? item.type : 'Chi';
+                const color = /^#[0-9a-fA-F]{6}$/.test(String(item.color || '')) ? item.color : CUSTOM_COLORS[categories.length % CUSTOM_COLORS.length];
+                const iconManual = item.iconManual === true && CUSTOM_ICONS.includes(item.icon);
+                // Dữ liệu cũ chưa có iconManual sẽ tiếp tục được gợi ý tự động theo tên.
+                const icon = iconManual ? item.icon : chooseCustomCategoryIcon(name, type);
+                categories.push({
+                    id: item.id,
+                    name,
+                    type,
+                    color,
+                    icon,
+                    iconManual,
+                    isCustom: true,
+                    get target() { return getTarget(this); }
+                });
+            });
+            applySavedCategoryOrder();
+        }
+
+        function findCategoryForTransaction(tx) {
+            if (!tx) return null;
+            if (tx.categoryId) {
+                const byId = categories.find(cat => cat.id === tx.categoryId);
+                if (byId) return byId;
+            }
+            const legacyName = String(tx.category || '').trim().toLowerCase();
+            if (!legacyName) return null;
+            const byCurrentName = categories.find(cat => cat.name.toLowerCase() === legacyName);
+            if (byCurrentName) return byCurrentName;
+            const base = BASE_CATEGORIES.find(cat => cat.name.toLowerCase() === legacyName);
+            return base ? categories.find(cat => cat.id === base.id) || null : null;
+        }
+
+        function normalizeTransactions(list) {
+            if (!Array.isArray(list)) return [];
+            return list.filter(item => item && typeof item === 'object').map(item => {
+                const tx = { ...item };
+                const cat = findCategoryForTransaction(tx);
+                tx.id = isSafeRecordId(tx.id, 'tx') ? tx.id : createStableId('tx');
+                const storedCategoryId = /^[A-Za-z0-9_-]{1,100}$/.test(String(tx.categoryId || '')) ? String(tx.categoryId) : null;
+                tx.categoryId = cat ? cat.id : storedCategoryId;
+                tx.category = cat ? cat.name : (cleanText(tx.category, 60) || 'Không xác định');
+                tx.type = ['Chi', 'Thu', 'Tiết Kiệm'].includes(tx.type) ? tx.type : (cat ? cat.type : 'Chi');
+                tx.date = /^\d{4}-\d{2}-\d{2}$/.test(String(tx.date || '')) ? tx.date : new Date().toISOString().slice(0, 10);
+                tx.time = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(tx.time || '')) ? tx.time : '00:00';
+                tx.desc = cleanText(tx.desc, 500) || 'Không có ghi chú';
+                const amount = Number(tx.amount);
+                tx.amount = Number.isSafeInteger(amount) && amount >= 0 ? amount : 0;
+                tx.updatedAt = Number(tx.updatedAt || 0);
+                return tx;
+            });
+        }
+
+        function getTransactionCategoryName(tx) {
+            const cat = findCategoryForTransaction(tx);
+            return cat ? cat.name : (tx.category || 'Không xác định');
+        }
+
+        rebuildCategoriesFromStorage();
+
+        // Tài khoản mới bắt đầu trống; dữ liệu chỉ được nạp từ cache đúng UID hoặc Firebase.
+        const initialTransactions = [];
+        let transactions = initialTransactions;
+
+        // ===== Đăng nhập Google + đồng bộ Firebase (điện thoại ↔ máy tính) =====
+        const firebaseConfig = {
+            apiKey: 'AIzaSyBxD_zay2OVOgfPvl1lbYSUobssVXPF118',
+            authDomain: 'quanlytaichinhcanhan-c68a7.firebaseapp.com',
+            databaseURL: 'https://quanlytaichinhcanhan-c68a7-default-rtdb.asia-southeast1.firebasedatabase.app',
+            projectId: 'quanlytaichinhcanhan-c68a7',
+            storageBucket: 'quanlytaichinhcanhan-c68a7.firebasestorage.app',
+            messagingSenderId: '779356437912',
+            appId: '1:779356437912:web:615909ef734ff6fe4fbfed'
+        };
+
+        const ACCOUNT_CACHE_PREFIX = 'finance_account_cache_';
+        const PENDING_UPDATES_PREFIX = 'finance_pending_updates_';
+        const SYNC_COLLECTIONS = ['transactions', 'customCategories', 'removedCategories', 'categoryNames', 'targets'];
+        let firebaseAuth = null;
+        let firebaseDb = null;
+        let currentUser = null;
+        let cloudRef = null;
+        let cloudListener = null;
+        let connectionRef = null;
+        let connectionListener = null;
+        let cloudEnabled = false;
+        let cloudSyncing = false;
+        let cloudDebounceTimer = null;
+        let cloudRetryTimer = null;
+        let localDirty = false;
+        let appReady = false;
+        let lastSyncedData = null;
+
+        function cloneJSON(value) {
+            return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+        }
+
+        function valuesToMap(value) {
+            const result = {};
+            const items = Array.isArray(value) ? value : (value && typeof value === 'object' ? Object.values(value) : []);
+            items.forEach(item => {
+                if (item && item.id) result[String(item.id)] = cloneJSON(item);
+            });
+            return result;
+        }
+
+        function valuesToBooleanMap(value) {
+            const result = {};
+            if (Array.isArray(value)) {
+                value.forEach(id => {
+                    if (id) result[String(id)] = true;
+                });
+            } else if (value && typeof value === 'object') {
+                Object.entries(value).forEach(([id, enabled]) => {
+                    if (enabled) result[id] = true;
+                });
+            }
+            return result;
+        }
+
+        function normalizeCloudData(data) {
+            const source = data && typeof data === 'object' ? data : {};
+            return {
+                v: 4,
+                createdAt: Number(source.createdAt || 0),
+                updatedAt: Number(source.updatedAt || source.ts || 0),
+                transactions: valuesToMap(source.transactions),
+                customCategories: valuesToMap(source.customCategories),
+                removedCategories: valuesToBooleanMap(source.removedCategories),
+                categoryNames: source.categoryNames && typeof source.categoryNames === 'object' && !Array.isArray(source.categoryNames)
+                    ? cloneJSON(source.categoryNames) : {},
+                categoryOrder: Array.isArray(source.categoryOrder) ? source.categoryOrder.map(String) : [],
+                targets: source.targets && typeof source.targets === 'object' && !Array.isArray(source.targets)
+                    ? cloneJSON(source.targets) : {}
+            };
+        }
+
+        function cloudSetStatus(state, text) {
+            const dot = document.getElementById('syncDot');
+            const label = document.getElementById('syncStatusText');
+            if (!dot || !label) return;
+            label.textContent = text;
+            dot.className = 'w-2 h-2 rounded-full inline-block ' + (
+                state === 'ok' ? 'bg-emerald-400' :
+                state === 'err' ? 'bg-rose-400' :
+                state === 'busy' ? 'bg-amber-300' : 'bg-slate-400'
+            );
+        }
+
+        function setAuthGate(mode, text) {
+            const gate = document.getElementById('authGate');
+            const label = document.getElementById('authGateText');
+            const button = document.getElementById('authGateLoginBtn');
+            if (!gate || !label || !button) return;
+            label.textContent = text || '';
+            if (mode === 'hidden') {
+                gate.classList.add('hidden');
+                gate.classList.remove('flex');
+            } else {
+                gate.classList.remove('hidden');
+                gate.classList.add('flex');
+                button.classList.toggle('hidden', mode !== 'login');
+                button.classList.toggle('flex', mode === 'login');
+            }
+        }
+
+        function updateAuthUI(user) {
+            const chip = document.getElementById('userChip');
+            const name = document.getElementById('userName');
+            const avatar = document.getElementById('userAvatar');
+            const loginBtn = document.getElementById('headerLoginBtn');
+            const signOutBtn = document.getElementById('signOutBtn');
+            if (!chip || !loginBtn || !signOutBtn) return;
+            if (user) {
+                name.textContent = user.displayName || user.email || 'Tài khoản Google';
+                avatar.src = user.photoURL || '';
+                chip.classList.remove('hidden');
+                chip.classList.add('flex');
+                loginBtn.classList.add('hidden');
+                signOutBtn.classList.remove('hidden');
+                signOutBtn.classList.add('flex');
+            } else {
+                chip.classList.add('hidden');
+                chip.classList.remove('flex');
+                loginBtn.classList.remove('hidden');
+                signOutBtn.classList.add('hidden');
+                signOutBtn.classList.remove('flex');
+            }
+        }
+
+        function serializeAppData() {
+            const transactionMap = {};
+            normalizeTransactions(transactions).forEach(tx => {
+                transactionMap[tx.id] = cloneJSON(tx);
+            });
+
+            const customCategoryMap = {};
+            categories.filter(cat => cat.isCustom).forEach(cat => {
+                customCategoryMap[cat.id] = {
+                    id: cat.id,
+                    name: cat.name,
+                    type: cat.type,
+                    color: cat.color,
+                    icon: cat.icon,
+                    iconManual: cat.iconManual === true
+                };
+            });
+
+            const removedMap = {};
+            removedBaseIds.forEach(id => { removedMap[id] = true; });
+
+            const targets = {};
+            categories.forEach(cat => {
+                const value = localStorage.getItem(TARGET_KEYS[cat.id] || ('user_target_' + cat.id));
+                if (value !== null) targets[cat.id] = String(value);
+            });
+
+            return {
+                v: 4,
+                createdAt: lastSyncedData ? Number(lastSyncedData.createdAt || 0) : 0,
+                updatedAt: Date.now(),
+                transactions: transactionMap,
+                customCategories: customCategoryMap,
+                removedCategories: removedMap,
+                categoryNames: { ...renamedBaseNames },
+                categoryOrder: categories.map(cat => cat.id),
+                targets
+            };
+        }
+
+        function getAccountCacheKey(uid) {
+            return ACCOUNT_CACHE_PREFIX + uid;
+        }
+
+        function getPendingUpdatesKey(uid) {
+            return PENDING_UPDATES_PREFIX + uid;
+        }
+
+        function loadAccountCache(uid) {
+            if (!uid) return null;
+            const value = readStoredJSON(getAccountCacheKey(uid), null);
+            return value && typeof value === 'object' ? normalizeCloudData(value) : null;
+        }
+
+        function saveAccountCache(data) {
+            if (!currentUser || !data) return;
+            localStorage.setItem(getAccountCacheKey(currentUser.uid), JSON.stringify(normalizeCloudData(data)));
+        }
+
+        function loadPendingUpdates() {
+            if (!currentUser) return {};
+            const value = readStoredJSON(getPendingUpdatesKey(currentUser.uid), {});
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        }
+
+        function savePendingUpdates(updates) {
+            if (!currentUser) return;
+            const clean = updates && typeof updates === 'object' ? updates : {};
+            localStorage.setItem(getPendingUpdatesKey(currentUser.uid), JSON.stringify(clean));
+            localDirty = Object.keys(clean).length > 0;
+        }
+
+        function sameJSON(a, b) {
+            return JSON.stringify(a) === JSON.stringify(b);
+        }
+
+        function buildDataDiff(baseData, currentData) {
+            const base = normalizeCloudData(baseData);
+            const current = normalizeCloudData(currentData);
+            const updates = {};
+
+            SYNC_COLLECTIONS.forEach(collection => {
+                const before = base[collection] || {};
+                const after = current[collection] || {};
+                const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+                keys.forEach(key => {
+                    const path = collection + '/' + key;
+                    if (!Object.prototype.hasOwnProperty.call(after, key)) updates[path] = null;
+                    else if (!Object.prototype.hasOwnProperty.call(before, key) || !sameJSON(before[key], after[key])) {
+                        updates[path] = cloneJSON(after[key]);
+                    }
+                });
+            });
+
+            if (!sameJSON(base.categoryOrder, current.categoryOrder)) {
+                updates.categoryOrder = cloneJSON(current.categoryOrder);
+            }
+            if (Object.keys(updates).length > 0) updates.v = 4;
+            return updates;
+        }
+
+        function applyFlatUpdates(data, updates) {
+            const result = normalizeCloudData(data);
+            Object.entries(updates || {}).forEach(([path, value]) => {
+                if (path === 'updatedAt' || path === 'createdAt') {
+                    if (typeof value === 'number') result[path] = value;
+                    return;
+                }
+                const parts = path.split('/');
+                let cursor = result;
+                for (let i = 0; i < parts.length - 1; i++) {
+                    const part = parts[i];
+                    if (!cursor[part] || typeof cursor[part] !== 'object') cursor[part] = {};
+                    cursor = cursor[part];
+                }
+                const leaf = parts[parts.length - 1];
+                if (value === null) delete cursor[leaf];
+                else cursor[leaf] = cloneJSON(value);
+            });
+            result.v = 4;
+            return result;
+        }
+
+        function mergePendingUpdates(nextUpdates) {
+            const pending = loadPendingUpdates();
+            Object.entries(nextUpdates || {}).forEach(([path, value]) => {
+                pending[path] = cloneJSON(value);
+            });
+            savePendingUpdates(pending);
+            return pending;
+        }
+
+        function clearSentPending(sentUpdates) {
+            const pending = loadPendingUpdates();
+            Object.entries(sentUpdates || {}).forEach(([path, value]) => {
+                if (Object.prototype.hasOwnProperty.call(pending, path) && sameJSON(pending[path], value)) {
+                    delete pending[path];
+                }
+            });
+            savePendingUpdates(pending);
+            return pending;
+        }
+
+        function clearStoredTargets() {
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('user_target_')) keys.push(key);
+            }
+            keys.forEach(key => localStorage.removeItem(key));
+        }
+
+        function resetLocalDataForNewAccount() {
+            transactions = [];
+            localStorage.setItem(TRANSACTIONS_KEY, '[]');
+            localStorage.setItem(CUSTOM_CATS_KEY, '[]');
+            localStorage.setItem(REMOVED_CATS_KEY, '[]');
+            localStorage.setItem(CATEGORY_NAMES_KEY, '{}');
+            localStorage.setItem(CATEGORY_ORDER_KEY, '[]');
+            clearStoredTargets();
+            rebuildCategoriesFromStorage();
+            if (typeof categoryFilterId !== 'undefined') categoryFilterId = null;
+            if (document.getElementById('txCategory')) {
+                initCategorySelect();
+                updateApp();
+            }
+        }
+
+        // Nạp đủ giao dịch + danh mục + tên đổi + thứ tự + target và dựng lại giao diện ngay.
+        function applyCloudData(data, options = {}) {
+            const normalized = normalizeCloudData(data);
+            localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(Object.values(normalized.customCategories)));
+            localStorage.setItem(REMOVED_CATS_KEY, JSON.stringify(Object.keys(normalized.removedCategories)));
+            localStorage.setItem(CATEGORY_NAMES_KEY, JSON.stringify(normalized.categoryNames));
+            localStorage.setItem(CATEGORY_ORDER_KEY, JSON.stringify(normalized.categoryOrder));
+
+            clearStoredTargets();
+            Object.entries(normalized.targets).forEach(([id, value]) => {
+                const amount = Number(value);
+                if (/^[A-Za-z0-9_-]{1,100}$/.test(id) && Number.isSafeInteger(amount) && amount >= 0) {
+                    localStorage.setItem(TARGET_KEYS[id] || ('user_target_' + id), String(amount));
+                }
+            });
+
+            rebuildCategoriesFromStorage();
+            transactions = normalizeTransactions(Object.values(normalized.transactions));
+            localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
+
+            if (typeof categoryFilterId !== 'undefined' && categoryFilterId && !categories.some(cat => cat.id === categoryFilterId)) {
+                categoryFilterId = null;
+            }
+            if (document.getElementById('txCategory')) {
+                initCategorySelect();
+                updateApp();
+            }
+
+            const canonical = serializeAppData();
+            canonical.createdAt = normalized.createdAt;
+            canonical.updatedAt = normalized.updatedAt;
+            if (options.cache !== false) saveAccountCache(canonical);
+            return canonical;
+        }
+
+        function queueCurrentChanges() {
+            if (!currentUser || !appReady) return;
+            const current = serializeAppData();
+            saveAccountCache(current);
+            const base = lastSyncedData || normalizeCloudData({});
+            const changes = buildDataDiff(base, current);
+            if (Object.keys(changes).length > 0) mergePendingUpdates(changes);
+        }
+
+        function detachCloudListeners() {
+            if (cloudRef && cloudListener) cloudRef.off('value', cloudListener);
+            if (connectionRef && connectionListener) connectionRef.off('value', connectionListener);
+            cloudListener = null;
+            connectionListener = null;
+            cloudRef = null;
+            connectionRef = null;
+        }
+
+        function attachCloudListeners() {
+            if (!cloudRef || !firebaseDb) return;
+            cloudListener = snapshot => {
+                if (!appReady) return;
+                const remote = normalizeCloudData(snapshot.val());
+                lastSyncedData = remote;
+                const pending = loadPendingUpdates();
+                const preview = applyFlatUpdates(remote, pending);
+                applyCloudData(preview);
+                if (Object.keys(pending).length > 0) {
+                    cloudSetStatus('busy', 'Đang hoàn tất thay đổi…');
+                    if (!cloudSyncing) setTimeout(() => pushToCloud(false), 0);
+                } else {
+                    cloudSetStatus('ok', 'Đã đồng bộ');
+                }
+            };
+            cloudRef.on('value', cloudListener, () => cloudSetStatus('err', 'Không có quyền đồng bộ'));
+
+            connectionRef = firebaseDb.ref('.info/connected');
+            connectionListener = snapshot => {
+                const connected = snapshot.val() === true;
+                if (!connected) {
+                    cloudSetStatus('idle', 'Đang ngoại tuyến');
+                } else if (Object.keys(loadPendingUpdates()).length > 0 && !cloudSyncing) {
+                    cloudSetStatus('busy', 'Đang gửi dữ liệu chờ…');
+                    pushToCloud(false);
+                }
+            };
+            connectionRef.on('value', connectionListener);
+        }
+
+        async function prepareSignedInAccount(user) {
+            currentUser = user;
+            cloudEnabled = true;
+            appReady = false;
+            lastSyncedData = null;
+            updateAuthUI(user);
+            setAuthGate('busy', 'Đang mở dữ liệu của ' + (user.email || 'tài khoản Google') + '…');
+            cloudSetStatus('busy', 'Đang kết nối Firebase…');
+            detachCloudListeners();
+
+            // Không nhận dữ liệu cũ: chỉ dùng cache riêng của đúng UID này.
+            resetLocalDataForNewAccount();
+            const cached = loadAccountCache(user.uid);
+            if (cached) applyCloudData(cached, { cache: false });
+
+            cloudRef = firebaseDb.ref('users/' + user.uid + '/appData');
+            cloudSyncing = true;
+            try {
+                const snapshot = await cloudRef.once('value');
+                const rawRemote = snapshot.val();
+                let remote;
+                if (rawRemote && typeof rawRemote === 'object') {
+                    remote = normalizeCloudData(rawRemote);
+                } else {
+                    // Chỉ khôi phục cache đã được gắn đúng UID; tuyệt đối không dùng dữ liệu cũ chung.
+                    resetLocalDataForNewAccount();
+                    remote = cached ? normalizeCloudData(cached) : serializeAppData();
+                    if (!remote.createdAt) remote.createdAt = Date.now();
+                    remote.updatedAt = Date.now();
+                    await cloudRef.set(remote);
+                    showToast(cached ? 'Đã khôi phục dữ liệu đã lưu của đúng tài khoản này.' : 'Đã tạo dữ liệu trống cho tài khoản Google này.', 'success');
+                }
+
+                lastSyncedData = remote;
+                const pending = loadPendingUpdates();
+                const preview = applyFlatUpdates(remote, pending);
+                applyCloudData(preview);
+                cloudSetStatus(Object.keys(pending).length ? 'busy' : 'ok', Object.keys(pending).length ? 'Có dữ liệu đang chờ gửi' : 'Đã đồng bộ');
+            } catch (error) {
+                console.error('Firebase initial sync failed:', error);
+                if (!cached) {
+                    resetLocalDataForNewAccount();
+                    lastSyncedData = serializeAppData();
+                } else {
+                    lastSyncedData = cached;
+                }
+                cloudSetStatus('idle', 'Ngoại tuyến — dữ liệu lưu trên máy');
+                showToast('Chưa kết nối được Firebase. Thay đổi sẽ tự gửi khi có mạng.', 'warning');
+            } finally {
+                cloudSyncing = false;
+                appReady = true;
+                setAuthGate('hidden');
+                attachCloudListeners();
+                if (Object.keys(loadPendingUpdates()).length > 0) setTimeout(() => pushToCloud(false), 0);
+            }
+        }
+
+        function initializeFirebaseSync() {
+            try {
+                if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                firebaseAuth = firebase.auth();
+                firebaseDb = firebase.database();
+                firebaseAuth.useDeviceLanguage();
+                firebaseAuth.onAuthStateChanged(async user => {
+                    if (user) {
+                        await prepareSignedInAccount(user);
+                    } else {
+                        detachCloudListeners();
+                        if (cloudDebounceTimer) clearTimeout(cloudDebounceTimer);
+                        if (cloudRetryTimer) clearTimeout(cloudRetryTimer);
+                        cloudDebounceTimer = null;
+                        cloudRetryTimer = null;
+                        currentUser = null;
+                        cloudEnabled = false;
+                        appReady = false;
+                        lastSyncedData = null;
+                        resetLocalDataForNewAccount();
+                        updateAuthUI(null);
+                        cloudSetStatus('idle', 'Chưa đăng nhập');
+                        setAuthGate('login', 'Đăng nhập Google để mở và đồng bộ dữ liệu của bạn.');
+                    }
+                });
+            } catch (error) {
+                console.error('Firebase init failed:', error);
+                cloudSetStatus('err', 'Không tải được Firebase');
+                setAuthGate('login', 'Không tải được dịch vụ đăng nhập. Hãy kiểm tra kết nối mạng rồi thử lại.');
+            }
+        }
+
+        async function signInWithGoogle() {
+            if (!firebaseAuth) {
+                showToast('Dịch vụ đăng nhập chưa sẵn sàng. Hãy tải lại trang.', 'error');
+                return;
+            }
+            setAuthGate('busy', 'Đang mở cửa sổ đăng nhập Google…');
+            try {
+                await firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+                const provider = new firebase.auth.GoogleAuthProvider();
+                provider.setCustomParameters({ prompt: 'select_account' });
+                await firebaseAuth.signInWithPopup(provider);
+            } catch (error) {
+                if (error.code === 'auth/popup-blocked') {
+                    showToast('Trình duyệt đã chặn cửa sổ đăng nhập. Đang chuyển sang trang đăng nhập Google…', 'warning');
+                    try {
+                        await firebaseAuth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+                        return;
+                    } catch (redirectError) {
+                        error = redirectError;
+                    }
+                }
+
+                const authMessages = {
+                    'auth/unauthorized-domain': 'Tên miền này chưa được Firebase cho phép đăng nhập. Hãy thêm hhhoanggganhhh.github.io vào Authentication → Settings → Authorized domains.',
+                    'auth/operation-not-supported-in-this-environment': 'Không thể đăng nhập khi mở file trực tiếp. Hãy mở ứng dụng bằng đường dẫn GitHub Pages bắt đầu bằng https://.',
+                    'auth/network-request-failed': 'Mất kết nối mạng nên chưa đăng nhập được. Hãy kiểm tra Internet rồi thử lại.',
+                    'auth/popup-closed-by-user': 'Bạn đã đóng cửa sổ đăng nhập Google. Chưa có dữ liệu nào bị thay đổi.',
+                    'auth/cancelled-popup-request': 'Yêu cầu đăng nhập trước đã được hủy. Bạn hãy bấm đăng nhập lại.',
+                    'auth/too-many-requests': 'Có quá nhiều lần đăng nhập liên tiếp. Vui lòng đợi một lúc rồi thử lại.'
+                };
+                const friendlyMessage = authMessages[error.code] || ('Không đăng nhập được: ' + (error.message || 'Lỗi không xác định.'));
+                const noticeType = (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') ? 'info' : 'error';
+                showToast(friendlyMessage, noticeType);
+                if (error.code === 'auth/unauthorized-domain') {
+                    setAuthGate('login', 'Tên miền GitHub chưa được cho phép đăng nhập. Xem thông báo màu đỏ phía trên.');
+                } else {
+                    setAuthGate('login', 'Đăng nhập Google để mở và đồng bộ dữ liệu của bạn.');
+                }
+            }
+        }
+
+        async function signOutGoogle() {
+            if (!firebaseAuth || !confirm('Đăng xuất khỏi tài khoản Google?')) return;
+            if (Object.keys(loadPendingUpdates()).length > 0) {
+                await Promise.race([pushToCloud(false), new Promise(resolve => setTimeout(resolve, 4000))]);
+            }
+            await firebaseAuth.signOut();
+            showToast('Đã đăng xuất.', 'info');
+        }
+
+        // Lưu cache ngay, rồi cập nhật từng nhánh Firebase sau 1 giây.
+        function scheduleCloudSync() {
+            if (!currentUser || !appReady) return;
+            queueCurrentChanges();
+            if (cloudDebounceTimer) clearTimeout(cloudDebounceTimer);
+            cloudDebounceTimer = setTimeout(() => pushToCloud(false), 1000);
+        }
+
+        async function pushToCloud(manual = false) {
+            if (!cloudEnabled || !cloudRef || cloudSyncing) {
+                if (manual && !currentUser) showToast('Hãy đăng nhập Google trước.', 'warning');
+                return false;
+            }
+            const sent = loadPendingUpdates();
+            if (Object.keys(sent).length === 0) {
+                localDirty = false;
+                cloudSetStatus('ok', 'Đã đồng bộ');
+                if (manual) showToast('Dữ liệu đã là bản mới nhất.', 'success');
+                return true;
+            }
+
+            cloudSyncing = true;
+            cloudSetStatus('busy', 'Đang tải lên…');
+            try {
+                const updates = { ...sent, v: 4, updatedAt: firebase.database.ServerValue.TIMESTAMP };
+                await cloudRef.update(updates);
+                if (cloudRetryTimer) {
+                    clearTimeout(cloudRetryTimer);
+                    cloudRetryTimer = null;
+                }
+                const remaining = clearSentPending(sent);
+                localDirty = Object.keys(remaining).length > 0;
+                cloudSetStatus(localDirty ? 'busy' : 'ok', localDirty ? 'Còn thay đổi đang chờ' : 'Đã đồng bộ');
+                if (manual) showToast('Đã lưu dữ liệu mới nhất lên Firebase.', 'success');
+                return true;
+            } catch (error) {
+                localDirty = true;
+                cloudSetStatus('idle', 'Chờ kết nối để đồng bộ');
+                if (manual) showToast('Chưa tải lên được; dữ liệu vẫn được giữ trên máy.', 'warning');
+                if (cloudRetryTimer) clearTimeout(cloudRetryTimer);
+                cloudRetryTimer = setTimeout(() => {
+                    cloudRetryTimer = null;
+                    if (currentUser && Object.keys(loadPendingUpdates()).length > 0) pushToCloud(false);
+                }, 5000);
+                return false;
+            } finally {
+                cloudSyncing = false;
+                if (currentUser && Object.keys(loadPendingUpdates()).length > 0 && !cloudRetryTimer) {
+                    setTimeout(() => pushToCloud(false), 0);
+                }
+            }
+        }
+
+        async function pullFromCloud(manual = false) {
+            if (!cloudEnabled || !cloudRef || cloudSyncing) return false;
+            cloudSyncing = true;
+            cloudSetStatus('busy', 'Đang tải dữ liệu…');
+            try {
+                const snapshot = await cloudRef.once('value');
+                const remote = normalizeCloudData(snapshot.val());
+                lastSyncedData = remote;
+                const pending = loadPendingUpdates();
+                const preview = applyFlatUpdates(remote, pending);
+                applyCloudData(preview);
+                cloudSetStatus(Object.keys(pending).length ? 'busy' : 'ok', Object.keys(pending).length ? 'Có dữ liệu đang chờ gửi' : 'Đã đồng bộ');
+                if (manual) showToast('Đã kiểm tra dữ liệu mới nhất từ Firebase.', 'success');
+                return true;
+            } catch (error) {
+                cloudSetStatus('idle', 'Ngoại tuyến — dữ liệu lưu trên máy');
+                if (manual) showToast('Chưa tải được; dữ liệu trên máy vẫn an toàn.', 'warning');
+                return false;
+            } finally {
+                cloudSyncing = false;
+                if (Object.keys(loadPendingUpdates()).length > 0) setTimeout(() => pushToCloud(false), 0);
+            }
+        }
+
+        async function cloudSyncNow() {
+            if (!currentUser) {
+                showToast('Hãy đăng nhập Google để đồng bộ.', 'warning');
+                return signInWithGoogle();
+            }
+            if (Object.keys(loadPendingUpdates()).length > 0) await pushToCloud(true);
+            else await pullFromCloud(true);
+        }
+
+        function syncOnLoad() {
+            initializeFirebaseSync();
+        }
+        // ===== Hết phần Firebase =====
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+            const toast = document.createElement('div');
+
+            const styles = {
+                success: { title: 'Thành công', className: 'toast-success', icon: 'fa-circle-check' },
+                error: { title: 'Có lỗi xảy ra', className: 'toast-error', icon: 'fa-triangle-exclamation' },
+                warning: { title: 'Cần chú ý', className: 'toast-warning', icon: 'fa-bell' },
+                info: { title: 'Thông báo', className: 'toast-info', icon: 'fa-circle-info' }
+            };
+            const style = styles[type] || styles.info;
+
+            toast.className = `toast-notification ${style.className} pointer-events-auto p-4 rounded-2xl text-sm flex items-start gap-3 transition-all duration-300 transform translate-x-full opacity-0`;
+            toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+            const iconElement = document.createElement('i');
+            iconElement.className = `fa-solid ${style.icon} mt-0.5 text-xl text-white`;
+
+            const contentElement = document.createElement('div');
+            contentElement.className = 'flex-1 min-w-0';
+            const titleElement = document.createElement('div');
+            titleElement.className = 'font-extrabold text-white mb-0.5';
+            titleElement.textContent = style.title;
+            const textElement = document.createElement('div');
+            textElement.className = 'font-semibold leading-relaxed text-white';
+            textElement.textContent = String(message);
+            contentElement.append(titleElement, textElement);
+
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.className = 'shrink-0 w-7 h-7 rounded-lg bg-white/15 hover:bg-white/30 text-white flex items-center justify-center transition-colors';
+            closeButton.setAttribute('aria-label', 'Đóng thông báo');
+            closeButton.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+
+            let removeTimer;
+            const removeToast = () => {
+                clearTimeout(removeTimer);
+                toast.classList.add('opacity-0', 'translate-x-full');
+                setTimeout(() => toast.remove(), 300);
+            };
+            closeButton.addEventListener('click', removeToast);
+            toast.append(iconElement, contentElement, closeButton);
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-x-full', 'opacity-0');
+            });
+
+            const displayTime = type === 'error' ? 8000 : type === 'warning' ? 6500 : 5000;
+            const startTimer = () => { removeTimer = setTimeout(removeToast, displayTime); };
+            toast.addEventListener('mouseenter', () => clearTimeout(removeTimer));
+            toast.addEventListener('mouseleave', startTimer);
+            startTimer();
+        }
+
+        function formatMoney(amount) {
+            return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+        }
+
+        function getCurrentTimeValue() {
+            const now = new Date();
+            return String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+        }
+
+        // Giờ tự chạy theo đồng hồ cho tới khi người dùng chủ động chọn một giờ khác.
+        let transactionTimeManuallyEdited = false;
+
+        function updateTransactionTimeModeLabel() {
+            const label = document.getElementById('txTimeModeText');
+            if (label) label.textContent = transactionTimeManuallyEdited ? 'Giờ đã chọn' : 'Tự động';
+        }
+
+        function useCurrentTransactionTime() {
+            transactionTimeManuallyEdited = false;
+            const input = document.getElementById('txTime');
+            if (input) input.value = getCurrentTimeValue();
+            updateTransactionTimeModeLabel();
+        }
+
+        function refreshAutomaticTransactionTime() {
+            if (!transactionTimeManuallyEdited) {
+                const input = document.getElementById('txTime');
+                if (input) input.value = getCurrentTimeValue();
+            }
+        }
+
+        function getTransactionTimestamp(tx) {
+            const timestamp = new Date(tx.date + 'T' + (tx.time || '00:00') + ':00').getTime();
+            return Number.isFinite(timestamp) ? timestamp : 0;
+        }
+
+        function formatTransactionDateTime(tx) {
+            const dateText = new Date(tx.date + 'T00:00:00').toLocaleDateString('vi-VN', {
+                day: '2-digit', month: '2-digit', year: 'numeric'
+            });
+            return dateText + ' · ' + (tx.time || '00:00');
+        }
+
+        // Mặc định ngày và giờ hiện tại
+        document.getElementById('txDate').valueAsDate = new Date();
+        useCurrentTransactionTime();
+        document.getElementById('txTime').addEventListener('input', function() {
+            transactionTimeManuallyEdited = true;
+            updateTransactionTimeModeLabel();
+        });
+        // Làm mới thường xuyên để giờ trên form không bị cũ khi người dùng nhập lâu.
+        setInterval(refreshAutomaticTransactionTime, 15000);
+
+        function initCategorySelect() {
+            const select = document.getElementById('txCategory');
+            const previous = select.value;
+            select.innerHTML = '';
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat.id;
+                opt.textContent = cat.name;
+                select.appendChild(opt);
+            });
+            if ([...select.options].some(option => option.value === previous)) select.value = previous;
+            updateCategoryIcon();
+            updateCategoryFilterSelect(); // đổ danh mục vào bộ lọc Nhật Ký cho đồng bộ
+        }
+
+        function updateCategoryIcon() {
+            const catId = document.getElementById('txCategory').value;
+            const cat = categories.find(c => c.id === catId);
+            const iconBox = document.getElementById('txCategoryIcon');
+            if (!iconBox || !cat) return;
+            iconBox.style.backgroundColor = cat.color;
+            iconBox.innerHTML = `<i class="fa-solid ${cat.icon}"></i>`;
+        }
+
+        // Save current transactions to LocalStorage
+        function saveData() {
+            transactions = normalizeTransactions(transactions);
+            localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
+            scheduleCloudSync(); // thay đổi cục bộ -> hẹn đồng bộ lên cloud
+        }
+
+        function renderProgressBars(categoryTotals) {
+            const container = document.getElementById('targetProgressContainer');
+            container.innerHTML = '';
+
+            // Khi đang lọc danh mục: bảng vẫn giữ nguyên đủ các danh mục,
+            // chỉ làm nổi bật khung danh mục đang lọc + cập nhật đúng tiến trình theo dữ liệu đã lọc
+            const catsToRender = categories;
+
+            catsToRender.forEach(cat => {
+                const isFiltered = categoryFilterId !== null && categoryFilterId === cat.id;
+                const isAnyFilter = categoryFilterId !== null;
+                const actual = categoryTotals[cat.id] || 0;
+                const percent = cat.target > 0 ? Math.min(Math.round((actual / cat.target) * 100), 100) : 0;
+                
+                let barColor = cat.color;
+                let statusText = `${percent}%`;
+                let badgeClass = 'bg-slate-100 text-slate-700';
+                let diff = 0;
+                let diffHtml = '';
+
+                if (cat.type === 'Chi') {
+                    diff = cat.target - actual;
+                    diffHtml = diff >= 0
+                        ? `<span class="text-emerald-600 font-bold">Còn <span class="underline decoration-dotted underline-offset-2">${formatMoney(diff)}</span></span>`
+                        : `<span class="text-rose-600 font-bold">Vượt <span class="underline decoration-dotted underline-offset-2">${formatMoney(Math.abs(diff))}</span></span>`;
+                    if (diff < 0) {
+                        badgeClass = 'bg-rose-100 text-rose-700 font-bold';
+                        statusText = `Vượt hạn mức`;
+                        barColor = '#ef4444';
+                    } else if (percent > 85) {
+                        badgeClass = 'bg-amber-100 text-amber-700';
+                        statusText = `Cảnh báo (${percent}%)`;
+                    } else {
+                        badgeClass = 'bg-emerald-100 text-emerald-700';
+                        statusText = `An toàn (${percent}%)`;
+                    }
+                } else if (cat.type === 'Tiết Kiệm') {
+                    diff = actual - cat.target;
+                    if (cat.target <= 0) {
+                        badgeClass = 'bg-slate-100 text-slate-500';
+                        statusText = `Chưa đặt`;
+                        diffHtml = `<span class="text-slate-400">Chưa có mục tiêu</span>`;
+                    } else {
+                        diffHtml = diff >= 0
+                            ? `<span class="text-purple-600 font-bold">Dư <span class="underline decoration-dotted underline-offset-2">${formatMoney(diff)}</span></span>`
+                            : `<span class="text-amber-600 font-bold">Thiếu <span class="underline decoration-dotted underline-offset-2">${formatMoney(Math.abs(diff))}</span></span>`;
+                        if (actual >= cat.target) {
+                            badgeClass = 'bg-purple-100 text-purple-700 font-bold';
+                            statusText = `Đã đạt Target`;
+                        } else {
+                            badgeClass = 'bg-purple-50 text-purple-600';
+                            statusText = `Đạt ${percent}% Target`;
+                        }
+                    }
+                } else if (cat.type === 'Thu') {
+                    diff = actual - cat.target;
+                    if (cat.target <= 0) {
+                        badgeClass = 'bg-slate-100 text-slate-500';
+                        statusText = `Chưa đặt`;
+                        diffHtml = `<span class="text-slate-400">Chưa có mục tiêu</span>`;
+                    } else {
+                        diffHtml = diff >= 0
+                            ? `<span class="text-emerald-600 font-bold">Vượt <span class="underline decoration-dotted underline-offset-2">${formatMoney(diff)}</span></span>`
+                            : `<span class="text-rose-500 font-bold">Thiếu <span class="underline decoration-dotted underline-offset-2">${formatMoney(Math.abs(diff))}</span></span>`;
+                        badgeClass = 'bg-emerald-100 text-emerald-700';
+                        statusText = `Đạt ${percent}% chỉ tiêu`;
+                    }
+                }
+
+                const item = document.createElement('div');
+                // Khi đang lọc: danh mục được lọc nổi bật khung, danh mục khác mờ đi
+                const highlightCls = isFiltered
+                    ? ' border-2 border-indigo-500 bg-indigo-50/40 rounded-xl px-3 py-2.5 shadow-md'
+                    : (isAnyFilter ? ' opacity-40' : '');
+                item.className = 'space-y-1.5 transition-all duration-300' + highlightCls;
+                item.innerHTML = `
+                    <div class="flex justify-between items-center text-xs">
+                        <div class="flex items-center gap-2">
+                            <span class="w-6 h-6 rounded-lg flex items-center justify-center text-white text-xs shadow-sm" style="background-color: ${cat.color}">
+                                <i class="fa-solid ${cat.icon}"></i>
+                            </span>
+                            <span class="font-bold ${isFiltered ? 'text-indigo-700' : 'text-slate-700'}">${escapeHTML(cat.name)}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-500">${formatMoney(actual)} / ${formatMoney(cat.target)}</span>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] ${badgeClass}">${statusText}</span>
+                        </div>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                        <div class="h-2.5 rounded-full transition-all duration-500" style="width: ${percent}%; background-color: ${barColor}"></div>
+                    </div>
+                    <div class="flex justify-between items-center text-[11px]">
+                        <span class="text-slate-400 font-medium">Chênh Lệch:</span>
+                        ${diffHtml}
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function updateApp() {
+            // Lọc dùng chung: mọi khu vực số liệu đều dựa trên cùng mảng đã lọc theo ngày + danh mục
+            const visible = getFilteredTransactions();
+            updateCategoryFilterSelect();
+
+            const categoryTotals = {};
+            categories.forEach(cat => categoryTotals[cat.id] = 0);
+
+            let totalIncome = 0;
+            let totalExpense = 0;
+            let totalSavings = 0;
+
+            visible.forEach(tx => {
+                if (tx.categoryId && categoryTotals[tx.categoryId] !== undefined) {
+                    categoryTotals[tx.categoryId] += tx.amount;
+                }
+                if (tx.type === 'Thu') totalIncome += tx.amount;
+                if (tx.type === 'Chi') totalExpense += tx.amount;
+                if (tx.type === 'Tiết Kiệm') totalSavings += tx.amount;
+            });
+
+            // Update KPI cards
+            document.getElementById('dashIncome').textContent = formatMoney(totalIncome);
+            document.getElementById('dashExpense').textContent = formatMoney(totalExpense);
+            document.getElementById('dashSavings').textContent = formatMoney(totalSavings);
+
+            // (Khoản tiết kiệm hiển thị không kèm số - chỉnh số trong Cài Đặt Target)
+
+            const netBalance = totalIncome - totalExpense - totalSavings;
+            document.getElementById('dashBalance').textContent = formatMoney(netBalance);
+
+            // Render progress bars (cập nhật đúng tiến trình theo dữ liệu đã lọc)
+            renderProgressBars(categoryTotals);
+
+            // Cập nhật banner thông báo khoảng ngày + danh mục đang xem phía trên các thẻ KPI
+            const banner = document.getElementById('filterBanner');
+            const bannerText = document.getElementById('filterBannerText');
+            const filterFrom = document.getElementById('filterFrom').value;
+            const filterTo = document.getElementById('filterTo').value;
+            const activeCatObj = categories.find(cat => cat.id === categoryFilterId);
+            const activeCat = activeCatObj ? activeCatObj.name : null;
+            if (filterFrom || filterTo || activeCat) {
+                const fmt = (d) => new Date(d + 'T00:00:00').toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const parts = [];
+                if (activeCat) parts.push(`danh mục <b class="underline decoration-dotted underline-offset-2">${escapeHTML(activeCat)}</b>`);
+                if (filterFrom || filterTo) parts.push(`${filterFrom ? fmt(filterFrom) : '...'} → ${filterTo ? fmt(filterTo) : '...'}`);
+                bannerText.innerHTML = `<i class="fa-solid fa-filter-circle-dollar text-amber-500"></i> Đang hiển thị số liệu cho: ${parts.join(' · ')}`;
+                banner.classList.remove('hidden');
+                banner.classList.add('flex');
+            } else {
+                banner.classList.add('hidden');
+                banner.classList.remove('flex');
+            }
+
+            // Render Transaction Log Table (with category + date/month filters applied)
+            renderTransactionTable();
+        }
+
+        document.getElementById('transactionForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const catId = document.getElementById('txCategory').value;
+            const categoryObj = categories.find(c => c.id === catId);
+            if (!categoryObj) {
+                showToast('Vui lòng chọn một danh mục hợp lệ!', 'error');
+                return;
+            }
+            categoryObj.target; // refresh target from localStorage
+
+            const date = document.getElementById('txDate').value;
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                showToast('Vui lòng chọn ngày giao dịch hợp lệ!', 'error');
+                return;
+            }
+            const timeInput = document.getElementById('txTime');
+            // Chế độ tự động luôn chốt đúng phút tại thời điểm bấm Lưu Giao Dịch.
+            if (!transactionTimeManuallyEdited) timeInput.value = getCurrentTimeValue();
+            const time = timeInput.value;
+            if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+                showToast('Vui lòng chọn giờ giao dịch hợp lệ!', 'error');
+                return;
+            }
+            const amountInput = Number(document.getElementById('txAmount').value);
+            if (isNaN(amountInput) || amountInput <= 0) {
+                showToast('Vui lòng nhập số tiền hợp lệ!', 'error');
+                return;
+            }
+            const amountInputVND = amountInput * 1000; // Input đơn vị "k" (nghìn đồng)
+            if (!Number.isSafeInteger(amountInputVND)) {
+                showToast('Số tiền quá lớn hoặc không hợp lệ!', 'error');
+                return;
+            }
+
+            const newTx = {
+                id: createStableId('tx'),
+                date,
+                time,
+                categoryId: categoryObj.id,
+                category: categoryObj.name,
+                desc: cleanText(document.getElementById('txDesc').value, 500) || 'Không có ghi chú',
+                type: categoryObj.type,
+                amount: amountInputVND,
+                updatedAt: Date.now()
+            };
+
+            transactions.unshift(newTx);
+            saveData();
+
+            // Reset form
+            document.getElementById('txAmount').value = '';
+            document.getElementById('txDesc').value = '';
+            useCurrentTransactionTime();
+
+            updateApp();
+            showToast(`Đã thêm giao dịch ${formatMoney(newTx.amount)} (${newTx.category})`, 'success');
+        });
+
+        function deleteTransaction(id) {
+            transactions = transactions.filter(t => t.id !== id);
+            saveData();
+            updateApp();
+            showToast('Đã xoá giao dịch!', 'warning');
+        }
+
+        // ===== Transaction Log Filters (by category + date range) =====
+
+        // Danh mục đang lọc (null = tất cả) — dùng chung cho Nhật Ký, KPI, Tiến Độ Target, biểu đồ
+        let categoryFilterId = null;
+
+        // Lọc theo danh mục: đồng bộ tức thì toàn bộ số liệu trên trang
+        function setCategoryFilter(catId) {
+            categoryFilterId = catId || null;
+            txPage = 1; // đổi bộ lọc -> về trang đầu
+            document.getElementById('filterCategory').value = categoryFilterId || '';
+            // Khi lọc danh mục, tự chọn luôn danh mục đó trong form Thêm Giao Dịch Mới
+            const txCat = document.getElementById('txCategory');
+            if (categoryFilterId && [...txCat.options].some(o => o.value === categoryFilterId)) {
+                txCat.value = categoryFilterId;
+                updateCategoryIcon();
+            }
+            updateApp();
+        }
+
+        // Đổ danh mục vào dropdown lọc (đồng bộ với danh sách trong Cài Đặt Target / Tiến Độ / Thêm Giao Dịch)
+        function updateCategoryFilterSelect() {
+            const select = document.getElementById('filterCategory');
+            if (!select) return;
+            select.innerHTML = '';
+            const allOpt = document.createElement('option');
+            allOpt.value = '';
+            allOpt.textContent = 'Tất cả';
+            select.appendChild(allOpt);
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat.id;
+                opt.textContent = cat.name;
+                select.appendChild(opt);
+            });
+            select.value = categoryFilterId || '';
+        }
+
+        // Hàm lọc dùng chung: đọc danh mục + ô Từ/Đến, trả về giao dịch khớp (hoặc toàn bộ nếu không lọc)
+        function getFilteredTransactions() {
+            const filterFrom = document.getElementById('filterFrom').value;
+            const filterTo = document.getElementById('filterTo').value;
+            let visible = [...transactions];
+            if (categoryFilterId) visible = visible.filter(tx => tx.categoryId === categoryFilterId);
+            if (filterFrom) visible = visible.filter(tx => tx.date >= filterFrom);
+            if (filterTo) visible = visible.filter(tx => tx.date <= filterTo);
+            return visible;
+        }
+
+        function clearTransactionFilters() {
+            document.getElementById('filterFrom').value = '';
+            document.getElementById('filterTo').value = '';
+            categoryFilterId = null;
+            txPage = 1; // đổi bộ lọc -> về trang đầu
+            document.getElementById('filterCategory').value = '';
+            updateApp(); // cập nhật lại toàn bộ số liệu (KPI, Target, biểu đồ, nhật ký)
+        }
+
+        function renderTransactionTable() {
+            const txBody = document.getElementById('transactionBody');
+            txBody.innerHTML = '';
+
+            let visible = getFilteredTransactions().sort((a, b) => {
+                const byDateTime = getTransactionTimestamp(b) - getTransactionTimestamp(a);
+                return byDateTime || Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
+            });
+
+            document.getElementById('txCountBadge').textContent = `${visible.length} giao dịch`;
+
+            const filterFrom = document.getElementById('filterFrom').value;
+            const filterTo = document.getElementById('filterTo').value;
+            const filterInfo = document.getElementById('filterInfo');
+            if (filterFrom || filterTo) {
+                const fmt = (d) => new Date(d + 'T00:00:00').toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                filterInfo.textContent = filterFrom && filterTo
+                    ? `${fmt(filterFrom)} → ${fmt(filterTo)}`
+                    : filterFrom
+                        ? `Từ ${fmt(filterFrom)}`
+                        : `Đến ${fmt(filterTo)}`;
+            } else {
+                filterInfo.textContent = 'Tất cả giao dịch';
+            }
+
+            if (visible.length === 0) {
+                txBody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-8 text-slate-400">
+                            <i class="fa-solid fa-folder-open text-3xl mb-2 block"></i>
+                            Chưa có giao dịch nào. Hãy thêm ở form bên cạnh!
+                        </td>
+                    </tr>
+                `;
+                renderTxPagination(1, 0);
+                onTxCheckChange();
+                updateSelectAllTxHeader();
+                return;
+            }
+
+            const PAGE_SIZE = 10;
+            const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+            if (txPage > totalPages) txPage = totalPages;
+            const pageStart = (txPage - 1) * PAGE_SIZE;
+            const pageItems = visible.slice(pageStart, pageStart + PAGE_SIZE); // tối đa 10 giao dịch / trang
+
+            pageItems.forEach(tx => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition-colors";
+                tr.innerHTML = `
+                    <td class="text-center">
+                        <input type="checkbox" class="tx-check" data-tx-id="${tx.id}" onchange="onTxCheckChange()" title="Chọn để xóa">
+                    </td>
+                    <td class="text-slate-500 font-medium text-xs whitespace-nowrap"><i class="fa-regular fa-calendar mr-1 text-slate-400"></i>${formatTransactionDateTime(tx)}</td>
+                    <td class="font-bold text-slate-800">${escapeHTML(getTransactionCategoryName(tx))}</td>
+                    <td class="text-slate-600">${escapeHTML(tx.desc)}</td>
+                    <td>
+                        <span class="px-2 py-0.5 rounded text-xs font-medium
+                            ${tx.type === 'Thu' ? 'bg-emerald-100 text-emerald-700' : (tx.type === 'Chi' ? 'bg-rose-100 text-rose-700' : 'bg-purple-100 text-purple-700')}">
+                            ${escapeHTML(tx.type)}
+                        </span>
+                    </td>
+                    <td class="font-black ${tx.type === 'Thu' ? 'text-emerald-600' : (tx.type === 'Tiết Kiệm' ? 'text-purple-600' : 'text-slate-900')}">
+                        ${tx.type === 'Chi' || tx.type === 'Tiết Kiệm' ? '-' : '+'}${formatMoney(tx.amount)}
+                    </td>
+                    <td class="text-center">
+                        <button onclick="openEditTxModal('${tx.id}')" class="text-slate-400 hover:text-indigo-600 p-1.5 transition-colors rounded-lg hover:bg-indigo-50" title="Sửa giao dịch này">
+                            <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                    </td>
+                `;
+                txBody.appendChild(tr);
+            });
+
+            renderTxPagination(totalPages, visible.length);
+            onTxCheckChange();
+            updateSelectAllTxHeader();
+        }
+
+        // ===== Phân trang Nhật Ký (tối đa 10 giao dịch / trang) =====
+        let txPage = 1;
+        function goTxPage(page) {
+            txPage = page;
+            renderTransactionTable();
+            updateSelectAllTxHeader();
+        }
+        function renderTxPagination(totalPages, totalCount) {
+            const pag = document.getElementById('txPagination');
+            if (!pag) return;
+            pag.innerHTML = '';
+            if (totalPages <= 1 || totalCount === 0) return; // không cần phân trang khi đủ 1 trang
+
+            const mkBtn = (label, page, cls) => {
+                const b = document.createElement('button');
+                b.textContent = label;
+                b.className = cls;
+                b.onclick = () => goTxPage(page);
+                return b;
+            };
+            pag.appendChild(mkBtn('‹', txPage - 1, 'px-2.5 py-1 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors ' + (txPage === 1 ? 'opacity-40 pointer-events-none' : '')));
+            for (let i = 1; i <= totalPages; i++) {
+                pag.appendChild(mkBtn(String(i), i, 'px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ' + (i === txPage ? 'bg-indigo-600 text-white border-indigo-600' : 'border-slate-200 text-slate-600 hover:bg-slate-100')));
+            }
+            pag.appendChild(mkBtn('›', txPage + 1, 'px-2.5 py-1 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors ' + (txPage === totalPages ? 'opacity-40 pointer-events-none' : '')));
+        }
+
+        // ===== Chọn giao dịch để xóa hàng loạt =====
+        function getSelectedTxIds() {
+            return [...document.querySelectorAll('.tx-check:checked')].map(cb => cb.dataset.txId);
+        }
+        function onTxCheckChange() {
+            updateSelectAllTxHeader();
+            const btn = document.getElementById('deleteSelectedTxBtn');
+            if (!btn) return;
+            const count = getSelectedTxIds().length;
+            btn.classList.toggle('hidden', count === 0);
+            if (count > 0) btn.textContent = ` Xóa Các Giao Dịch Đã Chọn (${count})`;
+            else btn.innerHTML = '<i class="fa-solid fa-trash-can mr-1"></i> Xóa Các Giao Dịch Đã Chọn';
+        }
+        function updateSelectAllTxHeader() {
+            const selAll = document.getElementById('selectAllTx');
+            if (!selAll) return;
+            const cbs = [...document.querySelectorAll('.tx-check')];
+            selAll.checked = cbs.length > 0 && cbs.every(cb => cb.checked);
+            selAll.indeterminate = cbs.some(cb => cb.checked) && !selAll.checked;
+        }
+        function toggleSelectAllTx(checkbox) {
+            document.querySelectorAll('.tx-check').forEach(cb => { cb.checked = checkbox.checked; });
+            onTxCheckChange();
+        }
+        function deleteSelectedTransactions() {
+            const ids = getSelectedTxIds();
+            if (ids.length === 0) return;
+            if (!confirm(`Xóa ${ids.length} giao dịch đã chọn?`)) return;
+            transactions = transactions.filter(t => !ids.includes(t.id));
+            saveData();
+            updateApp();
+            onTxCheckChange();
+            showToast(`Đã xóa ${ids.length} giao dịch đã chọn!`, 'warning');
+        }
+
+        // ===== Chỉnh sửa giao dịch (nút bút) =====
+        function openEditTxModal(txId) {
+            const tx = transactions.find(t => t.id === txId);
+            if (!tx) return;
+            document.getElementById('editTxId').value = tx.id;
+            document.getElementById('editTxDate').value = tx.date;
+            document.getElementById('editTxTime').value = tx.time || '00:00';
+            const catSelect = document.getElementById('editTxCategory');
+            catSelect.innerHTML = '';
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat.id;
+                opt.textContent = cat.name;
+                catSelect.appendChild(opt);
+            });
+            catSelect.value = tx.categoryId || '';
+            document.getElementById('editTxType').value = tx.type;
+            document.getElementById('editTxAmount').value = tx.amount;
+            document.getElementById('editTxDesc').value = tx.desc;
+            document.getElementById('editTxModal').classList.remove('hidden');
+            document.getElementById('editTxModal').classList.add('flex');
+        }
+        function saveEditTransaction() {
+            const id = document.getElementById('editTxId').value;
+            const tx = transactions.find(t => t.id === id);
+            if (!tx) return;
+            const date = document.getElementById('editTxDate').value;
+            const time = document.getElementById('editTxTime').value;
+            const categoryId = document.getElementById('editTxCategory').value;
+            const categoryObj = categories.find(cat => cat.id === categoryId);
+            const type = document.getElementById('editTxType').value;
+            const amount = Number(document.getElementById('editTxAmount').value);
+            const desc = cleanText(document.getElementById('editTxDesc').value, 500);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { showToast('Vui lòng chọn ngày giao dịch hợp lệ!', 'error'); return; }
+            if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) { showToast('Vui lòng chọn giờ giao dịch hợp lệ!', 'error'); return; }
+            if (!categoryObj) { showToast('Vui lòng chọn danh mục!', 'error'); return; }
+            if (!Number.isSafeInteger(amount) || amount <= 0) { showToast('Vui lòng nhập số tiền hợp lệ!', 'error'); return; }
+            tx.date = date;
+            tx.time = time;
+            tx.categoryId = categoryObj.id;
+            tx.category = categoryObj.name;
+            tx.type = type;
+            tx.amount = amount;
+            tx.desc = desc || 'Không có ghi chú';
+            tx.updatedAt = Date.now();
+            saveData();
+            closeEditTxModal();
+            updateApp();
+            showToast('Đã cập nhật giao dịch!', 'success');
+        }
+        function closeEditTxModal() {
+            document.getElementById('editTxModal').classList.add('hidden');
+            document.getElementById('editTxModal').classList.remove('flex');
+        }
+
+        function clearAllTransactions() {
+            if (transactions.length === 0) return;
+            if (!confirm('Xóa toàn bộ giao dịch? Thao tác này sẽ đồng bộ sang mọi thiết bị.')) return;
+            transactions = [];
+            txPage = 1;
+            saveData();
+            updateApp();
+            showToast('Đã dọn dẹp sạch toàn bộ nhật ký giao dịch!', 'warning');
+        }
+
+        // ===== Target Settings (Modal) =====
+        const targetSettingsModal = document.getElementById('targetSettingsModal');
+        const targetSettingsList = document.getElementById('targetSettingsList');
+
+        function openTargetSettings() {
+            renderTargetSettingsList();
+            updateNewCategoryIconPreview();
+            targetSettingsModal.classList.remove('hidden');
+            targetSettingsModal.classList.add('flex');
+        }
+
+        function formatTargetInput(input) {
+            // Thêm dấu chấm hàng nghìn tự động ngay khi gõ (vd: 3500000 -> "3.500.000")
+            const numeric = input.value.replace(/[^\d]/g, '');
+            input.value = numeric ? parseInt(numeric, 10).toLocaleString('en-US') : '';
+        }
+
+        function addCustomCategory() {
+            const nameInput = document.getElementById('newCatName');
+            const name = cleanText(nameInput.value, 60);
+            if (!name) {
+                showToast('Vui lòng nhập tên danh mục!', 'error');
+                return;
+            }
+            const type = document.getElementById('newCatType').value;
+            if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+                showToast('Danh mục này đã tồn tại!', 'error');
+                return;
+            }
+            const idx = categories.length;
+            const cat = {
+                id: createStableId('custom'),
+                name: name,
+                type: type,
+                color: CUSTOM_COLORS[idx % CUSTOM_COLORS.length],
+                icon: selectedNewCategoryIcon || chooseCustomCategoryIcon(name, type),
+                iconManual: selectedNewCategoryIcon !== null,
+                isCustom: true,
+                get target() { return getTarget(this); }
+            };
+            categories.push(cat);
+            setTarget(cat, 0);
+            saveCustomCategories();
+            nameInput.value = '';
+            selectedNewCategoryIcon = null;
+            updateNewCategoryIconPreview();
+            renderTargetSettingsList();
+            initCategorySelect();
+            updateApp();
+            showToast(`Đã thêm danh mục "${name}"`, 'success');
+        }
+
+        function removeCategory(catId) {
+            const cat = categories.find(c => c.id === catId);
+            if (!cat) return;
+            if (!confirm(`Xóa danh mục "${cat.name}"?`)) return;
+            // Nếu đang lọc danh mục bị xóa thì tự bỏ lọc để tránh treo bộ lọc
+            if (categoryFilterId === cat.id) {
+                categoryFilterId = null;
+                document.getElementById('filterCategory').value = '';
+            }
+            const idx = categories.findIndex(c => c.id === catId);
+            if (idx !== -1) categories.splice(idx, 1);
+            localStorage.removeItem(TARGET_KEYS[catId] || ('user_target_' + catId));
+            if (cat.isCustom) {
+                saveCustomCategories();
+            } else {
+                // Danh mục mặc định: lưu ID vào danh sách ẩn để không hiện lại khi tải lại trang
+                let removed = [];
+                try { removed = JSON.parse(localStorage.getItem(REMOVED_CATS_KEY)) || []; } catch (e) {}
+                if (!removed.includes(catId)) removed.push(catId);
+                removedBaseIds = removed;
+                localStorage.setItem(REMOVED_CATS_KEY, JSON.stringify(removed));
+                scheduleCloudSync();
+            }
+            renderTargetSettingsList();
+            initCategorySelect();
+            updateApp();
+            showToast(`Đã xóa danh mục "${cat.name}"`, 'success');
+        }
+
+        // Sửa tên danh mục — đồng bộ ngay ra mọi khu vực (Tiến Độ Target, Phân Bổ, Thêm Giao Dịch, Nhật Ký, bộ lọc danh mục)
+        function renameCategory(catId) {
+            const cat = categories.find(c => c.id === catId);
+            if (!cat) return;
+            const newName = prompt(`Sửa tên danh mục "${cat.name}":`, cat.name);
+            if (newName === null) return; // người dùng bấm Hủy
+            const trimmed = cleanText(newName, 60);
+            if (!trimmed) {
+                showToast('Tên danh mục không được để trống!', 'error');
+                return;
+            }
+            if (trimmed === cat.name) return; // không đổi gì
+            if (categories.some(c => c.id !== cat.id && c.name.toLowerCase() === trimmed.toLowerCase())) {
+                showToast(`Danh mục "${trimmed}" đã tồn tại!`, 'error');
+                return;
+            }
+            // Cập nhật tên trong mảng danh mục
+            const oldName = cat.name;
+            cat.name = trimmed;
+            if (cat.isCustom && !cat.iconManual) cat.icon = chooseCustomCategoryIcon(trimmed, cat.type);
+            // Đồng bộ tên mới cho mọi giao dịch thuộc danh mục này (Nhật Ký Thu Chi)
+            transactions.forEach(tx => {
+                if (tx.categoryId === cat.id || (!tx.categoryId && tx.category === oldName)) {
+                    tx.categoryId = cat.id;
+                    tx.category = trimmed;
+                    tx.updatedAt = Date.now();
+                }
+            });
+            // Lưu tên đã đổi: danh mục mặc định lưu riêng để áp dụng lại khi tải trang
+            if (cat.isCustom) {
+                saveCustomCategories();
+            } else {
+                renamedBaseNames[cat.id] = cat.name;
+                localStorage.setItem(CATEGORY_NAMES_KEY, JSON.stringify(renamedBaseNames));
+                scheduleCloudSync();
+            }
+            saveData();
+            renderTargetSettingsList();
+            initCategorySelect();
+            updateApp();
+            showToast(`Đã đổi tên danh mục thành "${cat.name}"`, 'success');
+        }
+
+        // Nút lên/xuống dùng được trên điện thoại, thay cho thao tác kéo bằng chuột.
+        function moveCategory(catId, direction) {
+            const index = categories.findIndex(cat => cat.id === catId);
+            const nextIndex = index + direction;
+            if (index < 0 || nextIndex < 0 || nextIndex >= categories.length) return;
+            [categories[index], categories[nextIndex]] = [categories[nextIndex], categories[index]];
+            localStorage.setItem(CATEGORY_ORDER_KEY, JSON.stringify(categories.map(cat => cat.id)));
+            initCategorySelect();
+            renderTargetSettingsList();
+            updateApp();
+            scheduleCloudSync();
+        }
+
+        function renderTargetSettingsList() {
+            targetSettingsList.innerHTML = '';
+            categories.forEach((cat, index) => {
+                const row = document.createElement('div');
+                row.className = 'drag-row flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3';
+                row.draggable = true;
+                row.dataset.catId = cat.id;
+                row.innerHTML = `
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="drag-handle text-slate-400 hover:text-indigo-500 text-sm flex-shrink-0" title="Kéo để sắp xếp">
+                            <i class="fa-solid fa-grip-vertical"></i>
+                        </span>
+                        ${cat.isCustom ? `
+                            <button type="button" draggable="false" onclick="openIconPicker('${cat.id}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm shadow-sm flex-shrink-0 hover:ring-2 hover:ring-offset-2 hover:ring-indigo-300 transition-all" style="background-color: ${cat.color}" title="Nhấn để chọn icon">
+                                <i class="fa-solid ${cat.icon}"></i>
+                            </button>
+                        ` : `
+                            <span class="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm shadow-sm flex-shrink-0" style="background-color: ${cat.color}">
+                                <i class="fa-solid ${cat.icon}"></i>
+                            </span>
+                        `}
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5">
+                                <p class="font-bold text-slate-700 text-sm leading-tight truncate">${escapeHTML(cat.name)}</p>
+                                <button onclick="renameCategory('${cat.id}')" class="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors flex-shrink-0" title="Sửa tên danh mục">
+                                    <i class="fa-solid fa-pen text-[10px]"></i>
+                                </button>
+                            </div>
+                            <p class="text-[10px] text-slate-400 uppercase tracking-wide">${escapeHTML(cat.type)}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-shrink-0">
+                        <div class="flex sm:hidden items-center gap-0.5">
+                            <button onclick="moveCategory('${cat.id}', -1)" ${index === 0 ? 'disabled' : ''} class="w-7 h-7 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-25" title="Đưa lên">
+                                <i class="fa-solid fa-arrow-up text-[10px]"></i>
+                            </button>
+                            <button onclick="moveCategory('${cat.id}', 1)" ${index === categories.length - 1 ? 'disabled' : ''} class="w-7 h-7 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-25" title="Đưa xuống">
+                                <i class="fa-solid fa-arrow-down text-[10px]"></i>
+                            </button>
+                        </div>
+                        <input type="text" inputmode="numeric" value="${cat.target > 0 ? cat.target.toLocaleString('en-US') : ''}"
+                            class="w-24 sm:w-40 text-right border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                            data-cat="${cat.id}" oninput="formatTargetInput(this);" placeholder="0" />
+                        <span class="text-xs font-bold text-slate-400 mr-1">đ</span>
+                        <button onclick="removeCategory('${cat.id}')" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors" title="Xóa danh mục">
+                            <i class="fa-solid fa-trash-can text-xs"></i>
+                        </button>
+                    </div>
+                `;
+                targetSettingsList.appendChild(row);
+            });
+            attachDragHandlers();
+        }
+
+        // ===== Kéo thả sắp xếp thứ tự danh mục =====
+        let dragSource = null;
+
+        function attachDragHandlers() {
+            const rows = targetSettingsList.querySelectorAll('.drag-row');
+            rows.forEach(row => {
+                row.addEventListener('dragstart', function(e) {
+                    dragSource = row;
+                    row.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                    try { e.dataTransfer.setData('text/plain', row.dataset.catId); } catch (err) {}
+                });
+                row.addEventListener('dragend', function() {
+                    row.classList.remove('dragging');
+                    rows.forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+                    dragSource = null;
+                });
+                row.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const rect = row.getBoundingClientRect();
+                    const half = rect.height / 2;
+                    const before = (e.clientY - rect.top) < half;
+                    row.classList.remove('drag-over-top', 'drag-over-bottom');
+                    row.classList.add(before ? 'drag-over-top' : 'drag-over-bottom');
+                });
+                row.addEventListener('dragleave', function() {
+                    row.classList.remove('drag-over-top', 'drag-over-bottom');
+                });
+                row.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    row.classList.remove('drag-over-top', 'drag-over-bottom');
+                    if (!dragSource || dragSource === row) return;
+                    const rect = row.getBoundingClientRect();
+                    const half = rect.height / 2;
+                    const before = (e.clientY - rect.top) < half;
+                    const list = targetSettingsList;
+                    if (before) {
+                        list.insertBefore(dragSource, row);
+                    } else {
+                        list.insertBefore(dragSource, row.nextSibling);
+                    }
+                    saveCategoryOrder();
+                    renderTargetSettingsList(); // render lại với thứ tự mới + cập nhật số liệu
+                    updateApp();
+                });
+            });
+        }
+
+        // Lưu thứ tự danh mục hiện tại (theo id) vào localStorage + cloud
+        function saveCategoryOrder() {
+            // Đọc thứ tự từ DOM sau khi kéo thả (đúng thứ tự người dùng sắp xếp)
+            const rows = targetSettingsList.querySelectorAll('.drag-row');
+            const order = [];
+            rows.forEach(r => { if (r.dataset.catId) order.push(r.dataset.catId); });
+            if (order.length === 0) return;
+            localStorage.setItem(CATEGORY_ORDER_KEY, JSON.stringify(order));
+            // Cập nhật lại mảng categories theo thứ tự mới để các khu vực khác dùng chung
+            const byId = {};
+            categories.forEach(c => byId[c.id] = c);
+            const sorted = [];
+            order.forEach(id => { if (byId[id]) { sorted.push(byId[id]); delete byId[id]; } });
+            categories.forEach(c => { if (byId[c.id]) sorted.push(c); });
+            if (sorted.length === categories.length) {
+                categories.length = 0;
+                categories.push(...sorted);
+            }
+            // Đồng bộ thứ tự mới xuống dropdown Thêm Giao Dịch + bộ lọc danh mục
+            initCategorySelect();
+            scheduleCloudSync();
+        }
+
+        // Áp dụng thứ tự đã lưu lên mảng categories (nếu có)
+        function applySavedCategoryOrder() {
+            try {
+                const order = JSON.parse(localStorage.getItem(CATEGORY_ORDER_KEY));
+                if (!Array.isArray(order) || order.length === 0) return;
+                const byId = {};
+                categories.forEach(c => byId[c.id] = c);
+                const sorted = [];
+                order.forEach(id => {
+                    if (byId[id]) { sorted.push(byId[id]); delete byId[id]; }
+                });
+                // Các danh mục chưa có trong thứ tự đã lưu (mới thêm) xếp cuối theo thứ tự hiện tại
+                categories.forEach(c => { if (byId[c.id]) sorted.push(c); });
+                if (sorted.length === categories.length) {
+                    categories.length = 0;
+                    categories.push(...sorted);
+                }
+            } catch (e) {}
+        }
+
+        function saveTargetSettings() {
+            // Chỉ ghi target một lần khi bấm Lưu, không ghi và bật thông báo theo từng chữ số.
+            const targetInputs = [...targetSettingsList.querySelectorAll('input[data-cat]')];
+            const pendingTargets = [];
+            for (const input of targetInputs) {
+                const raw = input.value.replace(/[.,\s]/g, '');
+                const value = raw === '' ? 0 : Number(raw);
+                const cat = categories.find(c => c.id === input.dataset.cat);
+                if (!cat || !Number.isSafeInteger(value) || value < 0) {
+                    showToast('Có hạn mức không hợp lệ. Vui lòng kiểm tra lại.', 'error');
+                    input.focus();
+                    return;
+                }
+                pendingTargets.push({ cat, value });
+            }
+
+            pendingTargets.forEach(({ cat, value }) => setTarget(cat, value));
+            saveCustomCategories();
+            // Dọn các key target của danh mục không còn tồn tại (đã xóa) để localStorage sạch
+            const validIds = categories.map(c => c.id);
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith('user_target_custom_')) {
+                    const id = k.replace('user_target_', '');
+                    if (!validIds.includes(id)) localStorage.removeItem(k);
+                }
+            }
+            scheduleCloudSync();
+            updateApp(); // cập nhật ngay bảng target + toàn bộ dữ liệu
+            closeTargetSettings();
+            showToast('Đã lưu và đồng bộ các hạn mức Target.', 'success');
+        }
+
+        function closeTargetSettings() {
+            targetSettingsModal.classList.add('hidden');
+            targetSettingsModal.classList.remove('flex');
+        }
+
+        // Đưa tất cả target về 0 - CHỈ đặt giá trị, KHÔNG xóa/thêm danh mục
+        function resetTargets() {
+            if (!confirm('Đặt tất cả target về 0?')) return;
+            categories.forEach(cat => saveTarget(cat, 0));
+            renderTargetSettingsList(); // cập nhật ngay các ô nhập về trống
+            updateApp();
+            showToast('Đã đặt tất cả target về 0.', 'success');
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !document.getElementById('iconPickerModal').classList.contains('hidden')) {
+                closeIconPicker();
+                return;
+            }
+            if (e.key === 'Escape' && !targetSettingsModal.classList.contains('hidden')) {
+                closeTargetSettings();
+            }
+            if (e.key === 'Escape' && !document.getElementById('editTxModal').classList.contains('hidden')) {
+                closeEditTxModal();
+            }
+        });
+
+        // Initialize application on page load
+        window.onload = function() {
+            applySavedCategoryOrder(); // áp dụng thứ tự danh mục đã lưu (kéo thả)
+            initCategorySelect();
+            updateApp();
+            // Đồng bộ đám mây: tải dữ liệu mới nhất từ cloud về (nếu có), hoặc đẩy dữ liệu lên lần đầu
+            syncOnLoad();
+        };
+    </script>
+</body>
+</html>
